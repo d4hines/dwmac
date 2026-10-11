@@ -75,6 +75,22 @@ func adoptIntoScratchpadIfOwned(_ window: Window) -> Bool {
     return true
 }
 
+/// A summoned scratchpad is only visible while it has focus: once focus moves to any other window (a click, a
+/// focus command, another scratchpad), it goes back home. Otherwise, a tiled window raised by macOS could end up
+/// on top of it. Called whenever the focus changes
+@MainActor
+func hideUnfocusedScratchpads() {
+    let focused = focus.windowOrNil.flatMap(scratchpadOwning)
+    for scratchpad in config.scratchpads.values where scratchpad.name != focused?.name {
+        let summoned = scratchpad.windows.filter { $0.nodeWorkspace?.isScratchpadHome != true }
+        if summoned.isEmpty { continue }
+        let home = scratchpad.home
+        for window in summoned {
+            window.bindAsFloatingWindow(to: home)
+        }
+    }
+}
+
 /// The window that was focused last. It gets the configured size; the rest keep their size
 @MainActor
 private func primaryWindow(_ windows: [Window]) -> Window {

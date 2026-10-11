@@ -69,6 +69,25 @@ final class ScratchpadCommandTest: XCTestCase {
         assertEquals(focus.windowOrNil, tiled)
     }
 
+    func testHidesWhenFocusLeaves() async throws {
+        let workspace = focus.workspace
+        let tiled = TestWindow.new(id: 1, parent: workspace, app: .other)
+        _ = tiled.focusWindow()
+        let window = TestWindow.new(id: 2, parent: workspace)
+        window.bindAsFloatingWindow(to: scratchpad.home)
+        try await toggle()
+
+        // Focus stays on the scratchpad: nothing happens
+        hideUnfocusedScratchpads()
+        assertEquals(window.nodeWorkspace, workspace)
+
+        // Focus moves to another window: the scratchpad goes home
+        _ = tiled.focusWindow()
+        hideUnfocusedScratchpads()
+        assertEquals(window.nodeWorkspace, scratchpad.home)
+        assertEquals(focus.windowOrNil, tiled)
+    }
+
     func testSummonFromAnotherWorkspace() async throws {
         let window = TestWindow.new(id: 1, parent: Workspace.get(byName: "a"))
         window.isFloating = true

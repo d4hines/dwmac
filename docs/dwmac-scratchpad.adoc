@@ -42,6 +42,9 @@ The command:
 * sends the scratchpad back to its hidden workspace, if it's focused
 * launches the app and summons its first window once it appears, if the app has no windows
 
+A summoned scratchpad is only visible while it's focused.
+As soon as focus moves to a window of another app, the scratchpad is sent back to its hidden workspace.
+
 // =========================================================== Options
 include::./util/conditional-options-header.adoc[]
 

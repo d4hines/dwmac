@@ -139,6 +139,9 @@ extension Workspace {
         hasFocusedMonitorChanged = true
     }
     _lastKnownFocus = frozenFocus
+    if hasFocusChanged {
+        hideUnfocusedScratchpads()
+    }
 
     if onFocusChangedRecursionGuard { return }
     onFocusChangedRecursionGuard = true
