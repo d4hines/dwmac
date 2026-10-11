@@ -32,6 +32,7 @@ let subcommandDescriptions = [
     ["  reload-config", "Reload currently active config"],
     ["  resize", "Resize the focused window"],
     ["  split", "Split focused window"],
+    ["  scratchpad", "Toggle a named scratchpad over the focused workspace."],
     ["  summon-workspace", "Move the requested workspace to the focused monitor."],
     ["  swap", "Swaps the focused window with another window."],
     ["  trigger-binding", "Trigger Dwmac binding as if it was pressed by user"],

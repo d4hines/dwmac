@@ -171,6 +171,13 @@ include::dwmac-swap.adoc[tags=synopsis]
 include::dwmac-swap.adoc[tags=purpose]
 include::dwmac-swap.adoc[tags=body]
 
+== scratchpad
+----
+include::./dwmac-scratchpad.adoc[tags=synopsis]
+----
+include::./dwmac-scratchpad.adoc[tags=purpose]
+include::./dwmac-scratchpad.adoc[tags=body]
+
 == summon-workspace
 ----
 include::./dwmac-summon-workspace.adoc[tags=synopsis]

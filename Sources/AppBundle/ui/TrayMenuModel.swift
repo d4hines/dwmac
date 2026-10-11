@@ -26,7 +26,7 @@ public final class TrayMenuModel: ObservableObject {
             return ($0.activeWorkspace == focus.workspace && sortedMonitors.count > 1 ? "*" : "") + activeWorkspaceName
         }
         .joined(separator: " │ ")
-    TrayMenuModel.shared.workspaces = Workspace.all.map {
+    TrayMenuModel.shared.workspaces = Workspace.all.filter { !$0.isScratchpadHome }.map {
         let apps = $0.allLeafWindowsRecursive.map { $0.app.name?.takeIf { !$0.isEmpty } }.filterNotNil().toSet()
         let appBundleIds = $0.allLeafWindowsRecursive.map { $0.app.rawAppBundleId }.filterNotNil().toSet()
         let dash = " - "

@@ -5,16 +5,16 @@ final class TestWindow: Window, CustomStringConvertible {
     private var _rect: Rect?
 
     @MainActor
-    private init(_ id: UInt32, _ parent: NonLeafDwNodeObject, _ rect: Rect?) {
+    private init(_ id: UInt32, _ app: TestApp, _ parent: NonLeafDwNodeObject, _ rect: Rect?) {
         _rect = rect
-        super.init(id: id, TestApp.shared, lastFloatingSize: nil, parent: parent, index: INDEX_BIND_LAST)
+        super.init(id: id, app, lastFloatingSize: nil, parent: parent, index: INDEX_BIND_LAST)
     }
 
     @discardableResult
     @MainActor
-    static func new(id: UInt32, parent: NonLeafDwNodeObject, rect: Rect? = nil) -> TestWindow {
-        let wi = TestWindow(id, parent, rect)
-        TestApp.shared._windows.append(wi)
+    static func new(id: UInt32, parent: NonLeafDwNodeObject, rect: Rect? = nil, app: TestApp = .shared) -> TestWindow {
+        let wi = TestWindow(id, app, parent, rect)
+        app._windows.append(wi)
         return wi
     }
 

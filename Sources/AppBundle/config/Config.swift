@@ -58,6 +58,7 @@ struct Config: ConvenienceCopyable {
     var workspaceToMonitorForceAssignment: [String: [MonitorDescription]] = [:]
     var modes: [String: Mode] = [:]
     var onWindowDetected: [WindowDetectedCallback] = []
+    var scratchpads: [String: Scratchpad] = [:]
     var onModeChanged: [any Command] = []
     var masterPosition: MasterPosition = .left
 }

@@ -9,10 +9,13 @@ final class TestApp: AbstractApp {
     let bundlePath: String? = nil
     @MainActor
     static let shared = TestApp()
+    /// For tests that need windows of two different apps
+    @MainActor
+    static let other = TestApp(pid: 1, bundleId: "hillyu.Dwmac.other-test-app")
 
-    private init() {
-        self.pid = 0
-        self.rawAppBundleId = "hillyu.Dwmac.test-app"
+    private init(pid: Int32 = 0, bundleId: String = "hillyu.Dwmac.test-app") {
+        self.pid = pid
+        self.rawAppBundleId = bundleId
         self.name = rawAppBundleId
     }
 

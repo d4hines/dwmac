@@ -35,7 +35,9 @@ final class MacWindow: Window {
         allWindowsMap[windowId] = window
 
         try await debugWindowsIfRecording(window)
-        if try await !restoreClosedWindowsCacheIfNeeded(newlyDetectedWindow: window) {
+        if try await !restoreClosedWindowsCacheIfNeeded(newlyDetectedWindow: window),
+           !adoptIntoScratchpadIfOwned(window)
+        {
             try await tryOnWindowDetected(window)
         }
         return window

@@ -57,6 +57,8 @@ dwmac -h;
 
     | swap [--swap-focus|--wrap-around|--window-id <window_id>]... (next|prev) [--swap-focus|--wrap-around|--window-id <window_id>]...
 
+    | scratchpad <scratchpad>
+
     | summon-workspace [--fail-if-noop] <workspace> [--fail-if-noop]
 
     | trigger-binding <binding> --mode <mode_id>
