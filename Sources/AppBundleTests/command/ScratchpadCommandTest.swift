@@ -146,4 +146,44 @@ final class ScratchpadCommandTest: XCTestCase {
         assertEquals(errors.count, 1)
         XCTAssertTrue(errors.descriptions.first.orDie().contains("is already owned by scratchpad"))
     }
+
+    func testHiddenTopLeft() {
+        let monitor = Rect(topLeftX: 0, topLeftY: 0, width: 1920, height: 1080)
+        let size = CGSize(width: 600, height: 400)
+        // Hidden in the bottom left corner: only the right edge is on screen, so it stays put (plus a margin)
+        let bottomLeft = Rect(topLeftX: -999, topLeftY: 1079, width: 1000, height: 800)
+        assertEquals(hiddenTopLeft(resizing: bottomLeft, to: size, monitors: [monitor]), CGPoint(x: -599 + 32, y: 1079))
+        // Hidden in the bottom right corner: only the left edge is on screen, so it stays put
+        let bottomRight = Rect(topLeftX: 1919, topLeftY: 1079, width: 1000, height: 800)
+        assertEquals(hiddenTopLeft(resizing: bottomRight, to: size, monitors: [monitor]), CGPoint(x: 1919, y: 1079))
+    }
+
+    /// Summoning a window hidden at another size resizes it while it's still hidden, then moves it on screen in
+    /// one go, so the app never redraws at the new size on screen. A shrinking window hidden in the bottom left
+    /// corner moves right first, so its right edge stays on screen
+    func testSummonShrinksWhileHidden() async throws {
+        let window = try await summonHidden(Rect(topLeftX: -999, topLeftY: 1079, width: 1000, height: 800))
+        assertEquals(window.frameHistory.map(\.topLeftCorner), [CGPoint(x: -927, y: 1079), CGPoint(x: -927, y: 1079), summonedCenter])
+        assertEquals(window.frameHistory.map(\.size), [CGSize(width: 1000, height: 800), summonedSize, summonedSize])
+        XCTAssertFalse(window.hiddenInCorner)
+    }
+
+    /// A growing window hidden in the bottom left corner grows first, then moves left
+    func testSummonGrowsWhileHidden() async throws {
+        let window = try await summonHidden(Rect(topLeftX: -499, topLeftY: 1079, width: 500, height: 300))
+        assertEquals(window.frameHistory.map(\.topLeftCorner), [CGPoint(x: -499, y: 1079), CGPoint(x: -927, y: 1079), summonedCenter])
+        assertEquals(window.frameHistory.map(\.size), [summonedSize, summonedSize, summonedSize])
+    }
+
+    private let summonedSize = CGSize(width: 960, height: 540) // 0.5 x 0.5 of the 1920x1080 test monitor
+    private let summonedCenter = CGPoint(x: 480, y: 270)
+
+    private func summonHidden(_ hidden: Rect) async throws -> TestWindow {
+        _ = TestWindow.new(id: 1, parent: focus.workspace, app: .other).focusWindow()
+        let window = TestWindow.new(id: 2, parent: focus.workspace, rect: hidden)
+        window.bindAsFloatingWindow(to: scratchpad.home)
+        window.hiddenInCorner = true
+        try await toggle()
+        return window
+    }
 }

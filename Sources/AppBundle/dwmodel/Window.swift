@@ -38,6 +38,10 @@ open class Window: DwNode, Hashable {
     var isMacosFullscreen: Bool { get async throws { false } }
     var isMacosMinimized: Bool { get async throws { false } } // todo replace with enum MacOsWindowNativeState { normal, fullscreen, invisible }
     var isHiddenInCorner: Bool { die("Not implemented") }
+    /// Forget the position from before hideInCorner without moving the window, for callers that set the frame
+    /// themselves (otherwise the next refresh's unhideFromCorner would move it back there)
+    @MainActor
+    func forgetHiddenInCorner() { die("Not implemented") }
     @MainActor
     func nativeFocus() { die("Not implemented") }
     func getAxRect() async throws -> Rect? { die("Not implemented") }

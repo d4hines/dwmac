@@ -35,7 +35,7 @@ private struct PendingSummon {
 private let pendingSummonTimeout: TimeInterval = 10
 
 @MainActor
-func toggleScratchpad(_ scratchpad: Scratchpad, _ io: CmdIo) -> Bool {
+func toggleScratchpad(_ scratchpad: Scratchpad, _ io: CmdIo) async throws -> Bool {
     let workspace = focus.workspace
     let windows = scratchpad.windows
     if windows.isEmpty {
@@ -43,6 +43,7 @@ func toggleScratchpad(_ scratchpad: Scratchpad, _ io: CmdIo) -> Bool {
     }
     let windowsHere = windows.filter { $0.nodeWorkspace == workspace }
     if windowsHere.isEmpty {
+        try await resizeWhileHidden(primaryWindow(windows), to: summonedFrame(scratchpad, on: workspace).size)
         summonScratchpad(scratchpad, windows, to: workspace)
         return primaryWindow(windows).focusWindow()
     }
@@ -97,22 +98,67 @@ private func primaryWindow(_ windows: [Window]) -> Window {
     windows.first { $0.parent?.mostRecentChild == $0 } ?? windows.last.orDie()
 }
 
+/// The primary window's frame when summoned: sized per the config, centered on the workspace's monitor
+@MainActor
+private func summonedFrame(_ scratchpad: Scratchpad, on workspace: Workspace) -> Rect {
+    let rect = workspace.workspaceMonitor.visibleRect
+    let size = CGSize(width: rect.width * scratchpad.width, height: rect.height * scratchpad.height)
+    return Rect(
+        topLeftX: rect.topLeftX + (rect.width - size.width) / 2,
+        topLeftY: rect.topLeftY + (rect.height - size.height) / 2,
+        width: size.width,
+        height: size.height,
+    )
+}
+
+/// Resize a window hidden in a corner before it's moved on screen, so the app reflows its content off-screen.
+/// Resizing after the move is visible: the window shows up at the old size, then redraws left to right as it
+/// shrinks (e.g. summoning on a smaller monitor than last time)
+@MainActor
+private func resizeWhileHidden(_ window: Window, to size: CGSize) async throws {
+    guard window.isHiddenInCorner, let hidden = try await window.getAxRect() else { return }
+    // Sizes from the config are fractional (0.9 * 3008 = 2707.2), but macOS reports whole points
+    if abs(hidden.width - size.width) < 1 && abs(hidden.height - size.height) < 1 { return }
+    // Move and resize as separate steps, ordered so the visible pixel column never leaves the screen (macOS refuses
+    // such frames). In the bottom left corner, a shrinking window must move right first, a growing one must grow first
+    let topLeft = hiddenTopLeft(resizing: hidden, to: size, monitors: monitors.map(\.rect))
+    if size.width < hidden.width {
+        try await window.setAxFrameBlocking(topLeft, nil)
+        try await window.setAxFrameBlocking(nil, size)
+    } else {
+        try await window.setAxFrameBlocking(nil, size)
+        try await window.setAxFrameBlocking(topLeft, nil)
+    }
+}
+
+/// Where a window hidden in a corner (see hideInCorner) must be put when resized to `size`. Only a sliver of a
+/// hidden window is on screen: its left edge in the bottom right corner, or its right edge in the bottom left one.
+/// That edge must stay on screen, or macOS clamps the resize (it keeps ~24px of the window on screen). Hidden
+/// windows sometimes drift a pixel further off screen, so keep a margin: only a 1px tall line is visible anyway
+func hiddenTopLeft(resizing hidden: Rect, to size: CGSize, monitors: [Rect]) -> CGPoint {
+    let isLeftEdgeVisible = monitors.contains { $0.contains(hidden.topLeftCorner) }
+    let onScreenMargin: CGFloat = 32
+    return isLeftEdgeVisible
+        ? hidden.topLeftCorner
+        : CGPoint(x: hidden.maxX + onScreenMargin - size.width, y: hidden.topLeftY)
+}
+
 @MainActor
 private func summonScratchpad(_ scratchpad: Scratchpad, _ windows: [Window], to workspace: Workspace) {
     let primary = primaryWindow(windows)
     // Bind the primary window last, so it ends up the most recent child of the workspace
     for window in windows.filter({ $0 != primary }) + [primary] {
         window.bindAsFloatingWindow(to: workspace)
-        // Restore the position from before hideInCorner now, so that refresh doesn't override the frame below
+    }
+    // Other windows (dialogs, second windows) go back where they were before hideInCorner. The primary window is
+    // moved straight to its frame below; restoring its old position first would move it twice
+    for window in windows where window != primary {
         (window as? MacWindow)?.unhideFromCorner()
     }
-    let rect = workspace.workspaceMonitor.visibleRect
-    let size = CGSize(width: rect.width * scratchpad.width, height: rect.height * scratchpad.height)
-    primary.lastFloatingSize = size
-    primary.setAxFrame(
-        CGPoint(x: rect.topLeftX + (rect.width - size.width) / 2, y: rect.topLeftY + (rect.height - size.height) / 2),
-        size,
-    )
+    if primary.isHiddenInCorner { primary.forgetHiddenInCorner() }
+    let frame = summonedFrame(scratchpad, on: workspace)
+    primary.lastFloatingSize = frame.size
+    primary.setAxFrame(frame.topLeftCorner, frame.size)
 }
 
 @MainActor

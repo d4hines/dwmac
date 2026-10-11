@@ -3,6 +3,9 @@ import AppKit
 
 final class TestWindow: Window, CustomStringConvertible {
     private var _rect: Rect?
+    /// Every frame set through setAxFrame, in order
+    var frameHistory: [Rect] = []
+    var hiddenInCorner = false
 
     @MainActor
     private init(_ id: UInt32, _ app: TestApp, _ parent: NonLeafDwNodeObject, _ rect: Rect?) {
@@ -44,6 +47,18 @@ final class TestWindow: Window, CustomStringConvertible {
         guard let old = _rect else { return }
         let newTopLeft = topLeft ?? old.topLeftCorner
         let newSize = size ?? old.size
-        _rect = Rect(topLeftX: newTopLeft.x, topLeftY: newTopLeft.y, width: newSize.width, height: newSize.height)
+        let rect = Rect(topLeftX: newTopLeft.x, topLeftY: newTopLeft.y, width: newSize.width, height: newSize.height)
+        _rect = rect
+        frameHistory.append(rect)
+    }
+
+    override func setAxFrameBlocking(_ topLeft: CGPoint?, _ size: CGSize?) async throws {
+        setAxFrame(topLeft, size)
+    }
+
+    override var isHiddenInCorner: Bool { hiddenInCorner }
+
+    @MainActor override func forgetHiddenInCorner() {
+        hiddenInCorner = false
     }
 }

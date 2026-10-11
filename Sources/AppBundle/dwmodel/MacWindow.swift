@@ -170,6 +170,11 @@ final class MacWindow: Window {
         prevUnhiddenProportionalPositionInsideWorkspaceRect != nil
     }
 
+    @MainActor
+    override func forgetHiddenInCorner() {
+        prevUnhiddenProportionalPositionInsideWorkspaceRect = nil
+    }
+
     override func getAxSize() async throws -> CGSize? {
         try await macApp.getAxSize(windowId)
     }
