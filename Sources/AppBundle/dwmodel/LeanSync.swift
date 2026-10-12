@@ -10,6 +10,8 @@ import Common
 // Config and monitor changes are sent before each op.
 
 @MainActor private var isProjecting = false
+/// Projection mismatches seen in unit tests
+@MainActor var leanMismatchLog: [String] = []
 
 /// Stable Lean ids for monitors, by top left corner
 @MainActor private var monitorIdsByPoint: [CGPoint: Int] = [:]
@@ -155,4 +157,58 @@ func leanApply(_ op: LeanOp) -> LeanSnapshot {
     for (name, windows) in summoned {
         placeSummonedScratchpad(windows, on: Workspace.get(byName: name), focused: snapshot.focusedWindow)
     }
+
+    // The proofs are about Lean's state; this checks Swift really matches it. Tests fail on a mismatch (see
+    // setUpWorkspacesForTests), debug builds crash, release builds log
+    // (`log stream --predicate 'eventMessage CONTAINS "dwmac-lean"'`)
+    let mismatches = leanProjectionMismatches(snapshot)
+    if !mismatches.isEmpty {
+        let message = "dwmac-lean: Swift doesn't match Lean: \(mismatches.joined(separator: "; "))"
+        if isUnitTest {
+            leanMismatchLog.append(message)
+        } else {
+            check(!isDebug, message)
+            NSLog("%@", message)
+        }
+    }
+}
+
+/// Where Swift's tree, visible workspaces and focus differ from `snapshot`
+@MainActor func leanProjectionMismatches(_ snapshot: LeanSnapshot) -> [String] {
+    var result: [String] = []
+    for screen in snapshot.screens {
+        guard let point = leanMonitorPoint(screen.monitor) else {
+            result.append("unknown monitor \(screen.monitor)")
+            continue
+        }
+        let shown = Workspace.all.first { $0.isVisible && $0.workspaceMonitor.rect.topLeftCorner == point }?.name
+        if shown != screen.workspace { result.append("monitor \(screen.monitor) shows \(shown ?? "nothing"), not \(screen.workspace)") }
+    }
+    let frozen = focus.frozen
+    if frozen.workspaceName != snapshot.focusedWorkspace || frozen.windowId != snapshot.focusedWindow {
+        let swiftFocus: String = frozen.workspaceName + "/" + String(describing: frozen.windowId)
+        let leanFocus: String = snapshot.focusedWorkspace + "/" + String(describing: snapshot.focusedWindow)
+        result.append("focus is \(swiftFocus), not \(leanFocus)")
+    }
+    for lean in snapshot.windows {
+        guard let window = Window.get(byId: lean.id) else { continue } // Not registered yet (see getOrRegister)
+        if window.isFloating != lean.isFloating { result.append("window \(lean.id) floating is \(window.isFloating)") }
+        let workspace = window.nodeWorkspace?.name
+        let parked = !(window.parent is Workspace) // In a macOS container: its workspace may differ
+        if !parked && workspace != lean.workspace {
+            result.append("window \(lean.id) is in \(workspace ?? "nothing"), not \(lean.workspace)")
+        }
+    }
+    let leanOrder = Dictionary(grouping: snapshot.windows, by: \.workspace).mapValues { $0.map(\.id) }
+    for workspace in Workspace.all {
+        let swiftOrder = workspace.allWindows.map(\.windowId)
+        for id in swiftOrder where snapshot.window(id) == nil {
+            result.append("window \(id) in \(workspace.name) is unknown to Lean")
+        }
+        let expected = (leanOrder[workspace.name] ?? []).filter { swiftOrder.contains($0) }
+        if swiftOrder.filter({ snapshot.window($0) != nil }) != expected {
+            result.append("\(workspace.name) order is \(swiftOrder), not \(expected)")
+        }
+    }
+    return result
 }

@@ -15,6 +15,8 @@ let projectRoot: URL = {
 
 @MainActor
 func setUpWorkspacesForTests() {
+    XCTAssertEqual(leanMismatchLog, [], "The previous test left Swift out of sync with Lean")
+    leanMismatchLog = []
     config = defaultConfig
     configUrl = defaultConfigUrl
     config.defaultRootContainerOrientation = .horizontal // Make default layout predictable
@@ -22,13 +24,13 @@ func setUpWorkspacesForTests() {
     // Don't create any bindings and workspaces for tests
     config.modes = [mainModeId: Mode(name: nil, bindings: [:])]
     config.persistentWorkspaces = []
-    leanResetForTests()
 
     for workspace in Workspace.all {
         for child in workspace.children {
             child.unbindFromParent()
         }
     }
+    leanResetForTests()
     check(Workspace.get(byName: "setUpWorkspacesForTests").focusWorkspace())
     Workspace.garbageCollectUnusedWorkspaces()
     check(focus.workspace.isEffectivelyEmpty)
