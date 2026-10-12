@@ -61,6 +61,15 @@ struct FrozenFocus: AeroAny, Equatable, Sendable {
 @MainActor var focus: LiveFocus { _focus.live }
 
 @MainActor func setFocus(to newFocus: LiveFocus) -> Bool {
+    var newFocus = newFocus
+    if newFocus.workspace.isScratchpadHome {
+        // Focusing a hidden scratchpad window (Cmd-Tab, the Dock, a notification, `focus --window-id`) summons it.
+        // The home itself is never focused: it would become visible, and new windows would tile into it
+        guard let window = newFocus.windowOrNil else { return false }
+        summonIfInScratchpadHome(window)
+        guard let summoned = window.toLiveFocusOrNil(), !summoned.workspace.isScratchpadHome else { return false }
+        newFocus = summoned
+    }
     if _focus == newFocus.frozen { return true }
     let oldFocus = focus
     // Normalize mruWindow when focus away from a workspace

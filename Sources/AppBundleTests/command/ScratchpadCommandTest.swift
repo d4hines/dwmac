@@ -107,6 +107,32 @@ final class ScratchpadCommandTest: XCTestCase {
         XCTAssertTrue(dialog.isFloating)
     }
 
+    func testNativeFocusSummonsInsteadOfShowingHome() {
+        let workspace = focus.workspace
+        let tiled = TestWindow.new(id: 1, parent: workspace, app: .other)
+        _ = tiled.focusWindow()
+        let window = TestWindow.new(id: 2, parent: workspace)
+        window.bindAsFloatingWindow(to: scratchpad.home)
+
+        // macOS focuses the hidden window (Cmd-Tab): it comes to the workspace, the home never becomes visible
+        XCTAssertTrue(window.focusWindow())
+        assertEquals(window.nodeWorkspace, workspace)
+        XCTAssertTrue(window.isFloating)
+        assertEquals(focus.workspace, workspace)
+        assertEquals(focus.windowOrNil, window)
+        XCTAssertFalse(scratchpad.home.isVisible)
+    }
+
+    func testHomeIsNeverShown() {
+        let workspace = focus.workspace
+        let home = scratchpad.home
+        XCTAssertFalse(home.focusWorkspace())
+        assertEquals(focus.workspace, workspace)
+        XCTAssertFalse(home.isVisible)
+        XCTAssertFalse(workspace.workspaceMonitor.setActiveWorkspace(home))
+        XCTAssertFalse(home.isVisible)
+    }
+
     func testHomeIsSkippedByNextPrev() async throws {
         let window = TestWindow.new(id: 1, parent: focus.workspace)
         _ = adoptIntoScratchpadIfOwned(window)

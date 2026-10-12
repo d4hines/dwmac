@@ -190,7 +190,9 @@ private func rearrangeWorkspacesOnMonitors() {
 
 @MainActor
 private func isValidAssignment(workspace: Workspace, screen: CGPoint) -> Bool {
-    if let forceAssigned = workspace.forceAssignedMonitor, forceAssigned.rect.topLeftCorner != screen {
+    if workspace.isScratchpadHome { // Scratchpad homes hold hidden windows. They are never shown on a monitor
+        return false
+    } else if let forceAssigned = workspace.forceAssignedMonitor, forceAssigned.rect.topLeftCorner != screen {
         return false
     } else {
         return true

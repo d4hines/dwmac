@@ -76,6 +76,15 @@ func adoptIntoScratchpadIfOwned(_ window: Window) -> Bool {
     return true
 }
 
+/// Summon the scratchpad of a window hidden in its home onto the focused workspace. Called by setFocus, which never
+/// focuses a home
+@MainActor
+func summonIfInScratchpadHome(_ window: Window) {
+    guard window.nodeWorkspace?.isScratchpadHome == true, let scratchpad = scratchpadOwning(window),
+          !focus.workspace.isScratchpadHome else { return }
+    summonScratchpad(scratchpad, scratchpad.windows, to: focus.workspace)
+}
+
 /// A summoned scratchpad is only visible while it has focus: once focus moves to any other window (a click, a
 /// focus command, another scratchpad), it goes back home. Otherwise, a tiled window raised by macOS could end up
 /// on top of it. Called whenever the focus changes
