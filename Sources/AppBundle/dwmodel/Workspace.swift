@@ -3,33 +3,8 @@ import Common
 
 @MainActor private var workspaceNameToWorkspace: [String: Workspace] = [:]
 
-@MainActor private var screenPointToPrevVisibleWorkspace: [CGPoint: String] = [:]
 @MainActor private var screenPointToVisibleWorkspace: [CGPoint: Workspace] = [:]
 @MainActor private var visibleWorkspaceToScreenPoint: [Workspace: CGPoint] = [:]
-
-// The returned workspace must be invisible and it must belong to the requested monitor
-@MainActor func getStubWorkspace(for monitor: Monitor) -> Workspace {
-    getStubWorkspace(forPoint: monitor.rect.topLeftCorner)
-}
-
-@MainActor
-private func getStubWorkspace(forPoint point: CGPoint) -> Workspace {
-    if let prev = screenPointToPrevVisibleWorkspace[point].map({ Workspace.get(byName: $0) }),
-       !prev.isVisible && prev.workspaceMonitor.rect.topLeftCorner == point && prev.forceAssignedMonitor == nil &&
-       !prev.isScratchpadHome
-    {
-        return prev
-    }
-    if let candidate = Workspace.all
-        .first(where: { !$0.isVisible && !$0.isScratchpadHome && $0.workspaceMonitor.rect.topLeftCorner == point })
-    {
-        return candidate
-    }
-    return (1 ... Int.max).lazy
-        .map { Workspace.get(byName: String($0)) }
-        .first { $0.isEffectivelyEmpty && !$0.isVisible && !config.persistentWorkspaces.contains($0.name) && $0.forceAssignedMonitor == nil }
-        .orDie("Can't create empty workspace")
-}
 
 final class Workspace: DwNode, NonLeafDwNodeObject, Hashable, Comparable {
     let name: String
@@ -116,11 +91,10 @@ extension Monitor {
         if let existing = screenPointToVisibleWorkspace[rect.topLeftCorner] {
             return existing
         }
-        // What if monitor configuration changed? (frame.origin is changed)
-        rearrangeWorkspacesOnMonitors()
-        // Normally, recursion should happen only once more because we must take the value from the cache
-        // (Unless, monitor configuration data race happens)
-        return self.activeWorkspace
+        // A monitor Lean hasn't heard of yet (monitor configuration changed)
+        leanRefresh()
+        return screenPointToVisibleWorkspace[rect.topLeftCorner]
+            .orDie("Lean shows no workspace on monitor \(rect.topLeftCorner)")
     }
 
     @MainActor
@@ -132,69 +106,30 @@ extension Monitor {
 @MainActor
 func gcMonitors() {
     if screenPointToVisibleWorkspace.count != monitors.count {
-        rearrangeWorkspacesOnMonitors()
+        leanRefresh()
     }
 }
 
 extension CGPoint {
+    /// Lean refuses scratchpad homes, and workspaces forced onto another monitor
     @MainActor
     fileprivate func setActiveWorkspace(_ workspace: Workspace) -> Bool {
-        if !isValidAssignment(workspace: workspace, screen: self) {
-            return false
-        }
-        if let prevMonitorPoint = visibleWorkspaceToScreenPoint[workspace] {
-            visibleWorkspaceToScreenPoint.removeValue(forKey: workspace)
-            screenPointToPrevVisibleWorkspace[prevMonitorPoint] =
-                screenPointToVisibleWorkspace.removeValue(forKey: prevMonitorPoint)?.name
-        }
-        if let prevWorkspace = screenPointToVisibleWorkspace[self] {
-            screenPointToPrevVisibleWorkspace[self] =
-                screenPointToVisibleWorkspace.removeValue(forKey: self)?.name
-            visibleWorkspaceToScreenPoint.removeValue(forKey: prevWorkspace)
-        }
-        visibleWorkspaceToScreenPoint[workspace] = self
-        screenPointToVisibleWorkspace[self] = workspace
-        workspace.assignedMonitorPoint = self
-        return true
+        let monitor = leanMonitorId(self)
+        return leanApply(.showWorkspace(monitor: monitor, workspace: workspace.name)).workspace(onMonitor: monitor) == workspace.name
     }
 }
 
+/// Make the visible workspaces match Lean's
 @MainActor
-private func rearrangeWorkspacesOnMonitors() {
-    var oldVisibleScreens: Set<CGPoint> = screenPointToVisibleWorkspace.keys.toSet()
-
-    let newScreens = monitors.map(\.rect.topLeftCorner)
-    var newScreenToOldScreenMapping: [CGPoint: CGPoint] = [:]
-    for newScreen in newScreens {
-        if let oldScreen = oldVisibleScreens.minBy({ ($0 - newScreen).vectorLength }) {
-            check(oldVisibleScreens.remove(oldScreen) != nil)
-            newScreenToOldScreenMapping[newScreen] = oldScreen
-        }
+func projectLeanScreens(_ snapshot: LeanSnapshot) {
+    var newScreenToWorkspace: [CGPoint: Workspace] = [:]
+    for screen in snapshot.screens {
+        guard let point = leanMonitorPoint(screen.monitor) else { continue }
+        newScreenToWorkspace[point] = Workspace.get(byName: screen.workspace)
     }
-
-    let oldScreenPointToVisibleWorkspace = screenPointToVisibleWorkspace
-    screenPointToVisibleWorkspace = [:]
-    visibleWorkspaceToScreenPoint = [:]
-
-    for newScreen in newScreens {
-        if let existingVisibleWorkspace = newScreenToOldScreenMapping[newScreen].flatMap({ oldScreenPointToVisibleWorkspace[$0] }),
-           newScreen.setActiveWorkspace(existingVisibleWorkspace)
-        {
-            continue
-        }
-        let stubWorkspace = getStubWorkspace(forPoint: newScreen)
-        check(newScreen.setActiveWorkspace(stubWorkspace),
-              "getStubWorkspace generated incompatible stub workspace (\(stubWorkspace)) for the monitor (\(newScreen)")
-    }
-}
-
-@MainActor
-private func isValidAssignment(workspace: Workspace, screen: CGPoint) -> Bool {
-    if workspace.isScratchpadHome { // Scratchpad homes hold hidden windows. They are never shown on a monitor
-        return false
-    } else if let forceAssigned = workspace.forceAssignedMonitor, forceAssigned.rect.topLeftCorner != screen {
-        return false
-    } else {
-        return true
+    screenPointToVisibleWorkspace = newScreenToWorkspace
+    visibleWorkspaceToScreenPoint = Dictionary(uniqueKeysWithValues: newScreenToWorkspace.map { ($0.value, $0.key) })
+    for (point, workspace) in newScreenToWorkspace {
+        workspace.assignedMonitorPoint = point
     }
 }

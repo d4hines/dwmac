@@ -8,7 +8,14 @@ open class Window: DwNode, Hashable {
     var isFullscreen: Bool = false
     var noOuterGapsInFullscreen: Bool = false
     var layoutReason: LayoutReason = .standard
-    var isFloating: Bool = false
+    var isFloating: Bool = false {
+        didSet {
+            if oldValue != isFloating {
+                let (id, isFloating) = (windowId, isFloating)
+                MainActor.assumeIsolated { leanFloatingChanged(id, isFloating) }
+            }
+        }
+    }
     var lastLayoutMonitor: Monitor? = nil
 
     @MainActor
@@ -17,6 +24,23 @@ open class Window: DwNode, Hashable {
         self.app = app
         self.lastFloatingSize = lastFloatingSize
         super.init(parent: parent, index: index)
+    }
+
+    // Swift binding a window is a request to Lean, which owns where windows live (LeanSync.swift)
+    @MainActor
+    @discardableResult
+    override func bind(to newParent: NonLeafDwNodeObject, index: Int) -> BindingData? {
+        let result = super.bind(to: newParent, index: index)
+        leanWindowBound(self)
+        return result
+    }
+
+    @discardableResult
+    override func unbindFromParent() -> BindingData {
+        let result = super.unbindFromParent()
+        let id = windowId
+        MainActor.assumeIsolated { leanWindowUnbound(id) }
+        return result
     }
 
     @MainActor static func get(byId windowId: UInt32) -> Window? { // todo make non optional

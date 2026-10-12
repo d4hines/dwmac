@@ -1,11 +1,11 @@
 import AppKit
 import Common
 
-// Scratchpads (xmonad's NamedScratchpad). Invariant: every window of a scratchpad's app lives either in the
-// scratchpad's hidden home workspace or floating on the workspace it's summoned to. Windows of the app never
-// tile into regular workspaces, and no other app's windows ever enter the home workspace.
+// Scratchpads (xmonad's NamedScratchpad). Lean decides where their windows live (Lean/DwmacCore/Model.lean): in the
+// scratchpad's hidden home workspace, or floating on the focused workspace while the scratchpad has focus. It proves a
+// home is never shown. This file does the physical side: launching apps, and sizing and placing summoned windows.
 
-private let scratchpadHomePrefix = "scratchpad:"
+let scratchpadHomePrefix = "scratchpad:"
 
 extension Workspace {
     var isScratchpadHome: Bool { name.hasPrefix(scratchpadHomePrefix) }
@@ -25,80 +25,36 @@ extension Scratchpad {
     config.scratchpads.values.first { $0.appId == window.app.rawAppBundleId }
 }
 
-private struct PendingSummon {
-    let workspaceName: String
-    let date: Date
-}
-
-/// Scratchpads launched by `scratchpad` command whose first window should be summoned once it appears
-@MainActor private var pendingSummons: [String: PendingSummon] = [:]
-private let pendingSummonTimeout: TimeInterval = 10
-
 @MainActor
 func toggleScratchpad(_ scratchpad: Scratchpad, _ io: CmdIo) async throws -> Bool {
     let workspace = focus.workspace
     let windows = scratchpad.windows
     if windows.isEmpty {
-        return launchScratchpad(scratchpad, onto: workspace, io)
+        // Lean summons the first window when it appears
+        leanApply(.toggleScratchpad(scratchpad.name))
+        return launchScratchpad(scratchpad, io)
     }
-    let windowsHere = windows.filter { $0.nodeWorkspace == workspace }
-    if windowsHere.isEmpty {
+    if !windows.contains(where: { $0.nodeWorkspace == workspace }) {
+        // About to be summoned: resize while it's still hidden
         try await resizeWhileHidden(primaryWindow(windows), to: summonedFrame(scratchpad, on: workspace).size)
-        summonScratchpad(scratchpad, windows, to: workspace)
-        return primaryWindow(windows).focusWindow()
     }
-    if let focused = focus.windowOrNil, windowsHere.contains(focused) {
-        let home = scratchpad.home
-        for window in windows where window.nodeWorkspace != home {
-            window.bindAsFloatingWindow(to: home)
-        }
-        return workspace.focusWorkspace()
-    }
-    return primaryWindow(windowsHere).focusWindow()
-}
-
-/// Called for every newly detected window, before on-window-detected callbacks. Returns true if the window
-/// belongs to a scratchpad (in which case on-window-detected callbacks must not run)
-@MainActor
-func adoptIntoScratchpadIfOwned(_ window: Window) -> Bool {
-    guard window.parent is Workspace, let scratchpad = scratchpadOwning(window) else { return false }
-    if let pending = pendingSummons.removeValue(forKey: scratchpad.name),
-       pending.date.distance(to: .now) < pendingSummonTimeout
-    {
-        summonScratchpad(scratchpad, [window], to: Workspace.get(byName: pending.workspaceName))
-        _ = window.focusWindow()
-        return true
-    }
-    // New windows (dialogs, second windows) join their already summoned siblings. Otherwise, they stay hidden
-    let home = scratchpad.home
-    let summonedTo = scratchpad.windows.first { $0 != window && $0.nodeWorkspace != home }?.nodeWorkspace
-    window.bindAsFloatingWindow(to: summonedTo ?? home)
+    leanApply(.toggleScratchpad(scratchpad.name))
     return true
 }
 
-/// Summon the scratchpad of a window hidden in its home onto the focused workspace. Called by setFocus, which never
-/// focuses a home
+/// Called after Lean moved scratchpad windows out of their home onto `workspace`: put the focused one (the primary)
+/// at its configured frame, and the rest (dialogs, second windows) back where they were before hideInCorner
 @MainActor
-func summonIfInScratchpadHome(_ window: Window) {
-    guard window.nodeWorkspace?.isScratchpadHome == true, let scratchpad = scratchpadOwning(window),
-          !focus.workspace.isScratchpadHome else { return }
-    summonScratchpad(scratchpad, scratchpad.windows, to: focus.workspace)
-}
-
-/// A summoned scratchpad is only visible while it has focus: once focus moves to any other window (a click, a
-/// focus command, another scratchpad), it goes back home. Otherwise, a tiled window raised by macOS could end up
-/// on top of it. Called whenever the focus changes
-@MainActor
-func hideUnfocusedScratchpads() {
-    let focused = focus.windowOrNil.flatMap(scratchpadOwning)
-    for scratchpad in config.scratchpads.values where scratchpad.name != focused?.name {
-        let summoned = scratchpad.windows.filter { $0.nodeWorkspace?.isScratchpadHome != true }
-        if summoned.isEmpty { continue }
-        let home = scratchpad.home
-        for window in summoned {
-            window.bindAsFloatingWindow(to: home)
-        }
+func placeSummonedScratchpad(_ windows: [Window], on workspace: Workspace, focused: UInt32?) {
+    guard let scratchpad = windows.first.flatMap(scratchpadOwning) else { return }
+    let primary = windows.first { $0.windowId == focused } ?? primaryWindow(windows)
+    for window in windows where window != primary {
+        (window as? MacWindow)?.unhideFromCorner()
     }
+    if primary.isHiddenInCorner { primary.forgetHiddenInCorner() }
+    let frame = summonedFrame(scratchpad, on: workspace)
+    primary.lastFloatingSize = frame.size
+    primary.setAxFrame(frame.topLeftCorner, frame.size)
 }
 
 /// The window that was focused last. It gets the configured size; the rest keep their size
@@ -153,29 +109,10 @@ func hiddenTopLeft(resizing hidden: Rect, to size: CGSize, monitors: [Rect]) -> 
 }
 
 @MainActor
-private func summonScratchpad(_ scratchpad: Scratchpad, _ windows: [Window], to workspace: Workspace) {
-    let primary = primaryWindow(windows)
-    // Bind the primary window last, so it ends up the most recent child of the workspace
-    for window in windows.filter({ $0 != primary }) + [primary] {
-        window.bindAsFloatingWindow(to: workspace)
-    }
-    // Other windows (dialogs, second windows) go back where they were before hideInCorner. The primary window is
-    // moved straight to its frame below; restoring its old position first would move it twice
-    for window in windows where window != primary {
-        (window as? MacWindow)?.unhideFromCorner()
-    }
-    if primary.isHiddenInCorner { primary.forgetHiddenInCorner() }
-    let frame = summonedFrame(scratchpad, on: workspace)
-    primary.lastFloatingSize = frame.size
-    primary.setAxFrame(frame.topLeftCorner, frame.size)
-}
-
-@MainActor
-private func launchScratchpad(_ scratchpad: Scratchpad, onto workspace: Workspace, _ io: CmdIo) -> Bool {
+private func launchScratchpad(_ scratchpad: Scratchpad, _ io: CmdIo) -> Bool {
     guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: scratchpad.appId) else {
         return io.err("Can't find app '\(scratchpad.appId)' of scratchpad '\(scratchpad.name)'")
     }
-    pendingSummons[scratchpad.name] = PendingSummon(workspaceName: workspace.name, date: .now)
     // If the app is already running without windows, macOS sends it a "reopen" event, which makes most apps
     // open a new window
     NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())

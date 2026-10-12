@@ -68,12 +68,13 @@ def parseOp (s : String) : Option State.Op :=
 
 /-- One record per line, fields separated by tabs:
 `focus <ws> <window id or ->`, then `screen <monitor> <ws>` per monitor (main first), then
-`window <id> <ws> <floating 0/1>` per window in tiling order -/
+`window <id> <ws> <floating 0/1>` per window in tiling order, then `mru <ids, most recent first, comma separated>` -/
 def State.snapshot (s : State) : String :=
   let focus := s!"focus\t{s.focusWs.render}\t{(s.focusWin.map toString).getD "-"}"
   let screens := s.screens.map fun (m, ws) => s!"screen\t{m}\t{ws.render}"
   let windows := s.windows.map fun w => s!"window\t{w.id}\t{w.ws.render}\t{if w.floating then 1 else 0}"
-  "\n".intercalate (focus :: screens ++ windows)
+  let mru := s!"mru\t{",".intercalate (s.mru.map toString)}"
+  "\n".intercalate (focus :: screens ++ windows ++ [mru])
 
 @[export dwmac_lean_state_init]
 def stateInitFfi (scratchpads : String) : State := State.init ((parseScratchpads scratchpads).getD [])

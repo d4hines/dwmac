@@ -30,13 +30,11 @@ final class ScratchpadCommandTest: XCTestCase {
 
     func testDetectedWindowGoesHome() {
         let window = TestWindow.new(id: 1, parent: focus.workspace)
-        XCTAssertTrue(adoptIntoScratchpadIfOwned(window))
         assertEquals(window.nodeWorkspace, scratchpad.home)
         XCTAssertTrue(window.isFloating)
 
         // Other apps' windows are left alone
         let other = TestWindow.new(id: 2, parent: focus.workspace, app: .other)
-        XCTAssertFalse(adoptIntoScratchpadIfOwned(other))
         assertEquals(other.nodeWorkspace, focus.workspace)
     }
 
@@ -77,13 +75,10 @@ final class ScratchpadCommandTest: XCTestCase {
         window.bindAsFloatingWindow(to: scratchpad.home)
         try await toggle()
 
-        // Focus stays on the scratchpad: nothing happens
-        hideUnfocusedScratchpads()
         assertEquals(window.nodeWorkspace, workspace)
 
         // Focus moves to another window: the scratchpad goes home
         _ = tiled.focusWindow()
-        hideUnfocusedScratchpads()
         assertEquals(window.nodeWorkspace, scratchpad.home)
         assertEquals(focus.windowOrNil, tiled)
     }
@@ -98,11 +93,9 @@ final class ScratchpadCommandTest: XCTestCase {
     }
 
     func testNewWindowJoinsSummonedSiblings() async throws {
-        let first = TestWindow.new(id: 1, parent: focus.workspace)
-        _ = adoptIntoScratchpadIfOwned(first)
+        _ = TestWindow.new(id: 1, parent: focus.workspace)
         try await toggle()
         let dialog = TestWindow.new(id: 2, parent: Workspace.get(byName: "a"))
-        XCTAssertTrue(adoptIntoScratchpadIfOwned(dialog))
         assertEquals(dialog.nodeWorkspace, focus.workspace)
         XCTAssertTrue(dialog.isFloating)
     }
@@ -134,8 +127,7 @@ final class ScratchpadCommandTest: XCTestCase {
     }
 
     func testHomeIsSkippedByNextPrev() async throws {
-        let window = TestWindow.new(id: 1, parent: focus.workspace)
-        _ = adoptIntoScratchpadIfOwned(window)
+        _ = TestWindow.new(id: 1, parent: focus.workspace)
         Workspace.get(byName: "a").apply { TestWindow.new(id: 2, parent: $0, app: .other) }
         let next = getNextPrevWorkspace(current: focus.workspace, isNext: true, wrapAround: true, stdin: nil, target: focus)
         XCTAssertFalse(next.orDie().isScratchpadHome)

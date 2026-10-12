@@ -86,21 +86,16 @@ private func moveTilingWindow(_ window: Window) {
 @MainActor
 func swapWindows(_ window1: Window, _ window2: Window) {
     if window1 == window2 { return }
-    guard let index1 = window1.ownIndex else { return }
-    guard let index2 = window2.ownIndex else { return }
-
-    if index1 < index2 {
-        let binding2 = window2.unbindFromParent()
-        let binding1 = window1.unbindFromParent()
-
-        window2.bind(to: binding1.parent, index: binding1.index)
-        window1.bind(to: binding2.parent, index: binding2.index)
+    guard let parent1 = window1.parent, let index1 = window1.ownIndex else { return }
+    guard let parent2 = window2.parent, let index2 = window2.ownIndex else { return }
+    // Move with bind only: unbinding a window tells Lean it closed
+    if parent1 === parent2 {
+        let (first, second) = index1 < index2 ? (window1, window2) : (window2, window1)
+        second.bind(to: parent1, index: min(index1, index2))
+        first.bind(to: parent1, index: max(index1, index2))
     } else {
-        let binding1 = window1.unbindFromParent()
-        let binding2 = window2.unbindFromParent()
-
-        window1.bind(to: binding2.parent, index: binding2.index)
-        window2.bind(to: binding1.parent, index: binding1.index)
+        window2.bind(to: parent1, index: index1)
+        window1.bind(to: parent2, index: index2)
     }
 }
 

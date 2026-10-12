@@ -15,12 +15,9 @@ struct MoveWorkspaceToMonitorCommand: Command {
                 if targetMonitor.monitorId == prevMonitor.monitorId {
                     return true
                 }
-                if targetMonitor.setActiveWorkspace(focusedWorkspace) {
-                    let stubWorkspace = getStubWorkspace(for: prevMonitor)
-                    check(
-                        prevMonitor.setActiveWorkspace(stubWorkspace),
-                        "getStubWorkspace generated incompatible stub workspace (\(stubWorkspace)) for the monitor (\(prevMonitor)",
-                    )
+                // Lean shows a stub on the previous monitor
+                let monitor = leanMonitorId(targetMonitor.rect.topLeftCorner)
+                if leanApply(.moveWorkspaceToMonitor(monitor)).workspace(onMonitor: monitor) == focusedWorkspace.name {
                     return true
                 } else {
                     return io.err(

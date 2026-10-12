@@ -83,7 +83,7 @@ open State
   && WsName.parse "S" == .named "S"
 #guard
   let s := ["windowAppeared\t7\tcode\t1\t0\t0", "monitorsChanged\t0\x1e1\t5\x1f1"].foldl stateStepFfi (stateInitFfi "")
-  s.snapshot == "focus\t1\t7\nscreen\t0\t1\nscreen\t1\t2\nwindow\t7\t1\t0"
+  s.snapshot == "focus\t1\t7\nscreen\t0\t1\nscreen\t1\t2\nwindow\t7\t1\t0\nmru\t"
 #guard (stateStepFfi (init []) "nonsense").snapshot == (init []).snapshot
 
 end DwmacCore.Model.Test

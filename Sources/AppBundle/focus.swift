@@ -60,29 +60,26 @@ struct FrozenFocus: AeroAny, Equatable, Sendable {
 /// DWMAC_WORKSPACE env before accessing the global focus.
 @MainActor var focus: LiveFocus { _focus.live }
 
+/// Ask Lean to focus `newFocus`. Returns whether it did. Focusing a hidden scratchpad window summons it onto the
+/// focused workspace instead (Cmd-Tab, the Dock, `focus --window-id`); Lean never shows a scratchpad home
 @MainActor func setFocus(to newFocus: LiveFocus) -> Bool {
-    var newFocus = newFocus
-    if newFocus.workspace.isScratchpadHome {
-        // Focusing a hidden scratchpad window (Cmd-Tab, the Dock, a notification, `focus --window-id`) summons it.
-        // The home itself is never focused: it would become visible, and new windows would tile into it
-        guard let window = newFocus.windowOrNil else { return false }
-        summonIfInScratchpadHome(window)
-        guard let summoned = window.toLiveFocusOrNil(), !summoned.workspace.isScratchpadHome else { return false }
-        newFocus = summoned
+    if let window = newFocus.windowOrNil {
+        return leanApply(.focusWindow(window.windowId)).focusedWindow == window.windowId
+    } else {
+        return leanApply(.focusWorkspace(newFocus.workspace.name)).focusedWorkspace == newFocus.workspace.name
     }
-    if _focus == newFocus.frozen { return true }
-    let oldFocus = focus
-    // Normalize mruWindow when focus away from a workspace
-    if oldFocus.workspace != newFocus.workspace {
-        oldFocus.windowOrNil?.markAsMostRecentChild()
-    }
-
-    _focus = newFocus.frozen
-    let status = newFocus.workspace.workspaceMonitor.setActiveWorkspace(newFocus.workspace)
-
-    newFocus.windowOrNil?.markAsMostRecentChild()
-    return status
 }
+
+/// Make the focus match Lean's
+@MainActor func projectLeanFocus(_ snapshot: LeanSnapshot) {
+    let workspace = Workspace.get(byName: snapshot.focusedWorkspace)
+    _focus = FrozenFocus(
+        windowId: snapshot.focusedWindow,
+        workspaceName: workspace.name,
+        monitorId: workspace.workspaceMonitor.monitorId ?? 0,
+    )
+}
+
 extension Window {
     @MainActor func focusWindow() -> Bool {
         if let focus = toLiveFocusOrNil() {
@@ -148,9 +145,6 @@ extension Workspace {
         hasFocusedMonitorChanged = true
     }
     _lastKnownFocus = frozenFocus
-    if hasFocusChanged {
-        hideUnfocusedScratchpads()
-    }
 
     if onFocusChangedRecursionGuard { return }
     onFocusChangedRecursionGuard = true

@@ -33,11 +33,11 @@ final class MacWindow: Window {
         let window = MacWindow(windowId, macApp, lastFloatingSize: rect?.size, parent: data.parent, index: data.index)
         window.isFloating = isFloating
         allWindowsMap[windowId] = window
+        leanRefresh() // Lean got the window while it was being created, before Window.get could find it
 
         try await debugWindowsIfRecording(window)
-        if try await !restoreClosedWindowsCacheIfNeeded(newlyDetectedWindow: window),
-           !adoptIntoScratchpadIfOwned(window)
-        {
+        // Lean put scratchpad windows in their home (or summoned them) when the window was bound above
+        if try await !restoreClosedWindowsCacheIfNeeded(newlyDetectedWindow: window), scratchpadOwning(window) == nil {
             try await tryOnWindowDetected(window)
         }
         return window

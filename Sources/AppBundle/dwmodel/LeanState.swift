@@ -68,6 +68,8 @@ struct LeanSnapshot: Equatable {
     var screens: [Screen] = []
     /// In tiling order
     var windows: [Win] = []
+    /// Most recently focused first. May hold closed windows
+    var mru: [UInt32] = []
 
     init(parsing text: String) {
         for line in text.split(separator: "\n") {
@@ -80,6 +82,8 @@ struct LeanSnapshot: Equatable {
                     if let mon = Int(f[1]) { screens.append(Screen(monitor: mon, workspace: f[2])) }
                 case ("window", 4):
                     if let id = UInt32(f[1]) { windows.append(Win(id: id, workspace: f[2], isFloating: f[3] == "1")) }
+                case ("mru", 2):
+                    mru = f[1].split(separator: ",").compactMap { UInt32($0) }
                 default: break
             }
         }
@@ -92,14 +96,19 @@ struct LeanSnapshot: Equatable {
 /// The window manager's state, owned by Lean. Swift sends it ops and reads back snapshots
 @MainActor
 enum LeanState {
+    /// The snapshot after the last op
+    private(set) static var last = LeanSnapshot(parsing: "")
+
     static func reset(scratchpads: [(name: String, appId: String)]) {
         dwmac_state_init(scratchpads.map { "\($0.name)\u{1f}\($0.appId)" }.joined(separator: "\u{1e}"))
+        last = snapshot
     }
 
     @discardableResult
     static func apply(_ op: LeanOp) -> LeanSnapshot {
         dwmac_state_step(op.encoded)
-        return snapshot
+        last = snapshot
+        return last
     }
 
     static var snapshot: LeanSnapshot {
