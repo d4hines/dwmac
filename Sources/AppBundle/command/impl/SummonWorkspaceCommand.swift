@@ -7,6 +7,9 @@ struct SummonWorkspaceCommand: Command {
 
     func run(_ env: CmdEnv, _ io: CmdIo) -> Bool {
         let workspace = Workspace.get(byName: args.target.val.raw)
+        if workspace.isScratchpadHome {
+            return io.err("'\(workspace.name)' is a scratchpad's hidden home and is never shown. Use 'scratchpad' instead")
+        }
         let monitor = focus.workspace.workspaceMonitor
         if monitor.activeWorkspace == workspace {
             if !args.failIfNoop {
