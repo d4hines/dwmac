@@ -4,3 +4,4 @@ import DwmacCore.Ffi
 import DwmacCore.Model
 import DwmacCore.ModelTest
 import DwmacCore.ModelProofs
+import DwmacCore.StateFfi

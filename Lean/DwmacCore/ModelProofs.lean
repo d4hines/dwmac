@@ -19,6 +19,7 @@ structure ScreensOk (s : State) : Prop where
   monsNodup : s.monitors.Nodup
   visNodup : s.visible.Nodup
   noHome : ∀ w ∈ s.visible, w.isHome = false
+  forcedOk : ∀ p ∈ s.screens, s.allowedOn p.2 p.1 = true
 
 structure WindowsOk (s : State) : Prop where
   idsNodup : (s.windows.map (·.id)).Nodup
@@ -91,6 +92,10 @@ theorem window?_of_mem {s : State} (hw : WindowsOk s) {w : Win} (hm : w ∈ s.wi
   unfold fixFocusWs; split <;> (try split) <;> rfl
 @[simp] theorem fixFocusWs_scratchpads (s : State) : s.fixFocusWs.scratchpads = s.scratchpads := by
   unfold fixFocusWs; split <;> (try split) <;> rfl
+@[simp] theorem fixFocusWs_forced (s : State) : s.fixFocusWs.forced = s.forced := by
+  unfold fixFocusWs; split <;> (try split) <;> rfl
+@[simp] theorem fixFocusWin_forced (s : State) : s.fixFocusWin.forced = s.forced := by
+  unfold fixFocusWin; split <;> rfl
 @[simp] theorem fixFocusWin_screens (s : State) : s.fixFocusWin.screens = s.screens := by
   unfold fixFocusWin; split <;> rfl
 @[simp] theorem fixFocusWin_windows (s : State) : s.fixFocusWin.windows = s.windows := by
@@ -125,6 +130,7 @@ theorem fixFocus_focusOk (s : State) (hne : s.screens ≠ []) : FocusOk s.fixFoc
 @[simp] theorem fixFocus_screens (s : State) : s.fixFocus.screens = s.screens := by simp [fixFocus]
 @[simp] theorem fixFocus_windows (s : State) : s.fixFocus.windows = s.windows := by simp [fixFocus]
 @[simp] theorem fixFocus_scratchpads (s : State) : s.fixFocus.scratchpads = s.scratchpads := by simp [fixFocus]
+@[simp] theorem fixFocus_forced (s : State) : s.fixFocus.forced = s.forced := by simp [fixFocus]
 
 /-! ## hideUnfocused -/
 
@@ -165,7 +171,7 @@ theorem hideUnfocused_focusedApp (s : State) : s.hideUnfocused.focusedApp = s.fo
 theorem hideUnfocused_inv (s : State) (hs : ScreensOk s) (hw : WindowsOk s) (hf : FocusOk s) :
     Inv s.hideUnfocused := by
   rw [hideUnfocused_eq]
-  refine ⟨⟨hs.monsNodup, hs.visNodup, hs.noHome⟩, ⟨?_, ?_⟩, ⟨hf.shown, ?_⟩, ?_⟩
+  refine ⟨⟨hs.monsNodup, hs.visNodup, hs.noHome, hs.forcedOk⟩, ⟨?_, ?_⟩, ⟨hf.shown, ?_⟩, ?_⟩
   · -- Ids don't change
     have : ((fun w : Win => w.id) ∘ hideOne s) = (fun w => w.id) := funext fun w => by simp
     simpa [List.map_map, this] using hw.idsNodup
@@ -210,50 +216,33 @@ theorem hideUnfocused_inv (s : State) (hs : ScreensOk s) (hw : WindowsOk s) (hf 
 
 /-! ## Screens -/
 
-theorem ScreensOk.congr {s t : State} (hs : ScreensOk s) (h : t.screens = s.screens) : ScreensOk t := by
-  obtain ⟨a, b, c⟩ := hs
-  exact ⟨by simpa [monitors, h] using a, by simpa [visible, h] using b, by simpa [visible, h] using c⟩
+theorem allowedOn_congr {s t : State} (h : t.forced = s.forced) : t.allowedOn = s.allowedOn := by
+  funext ws mon; simp [allowedOn, forcedOf, h]
+
+theorem ScreensOk.congr {s t : State} (hs : ScreensOk s) (h : t.screens = s.screens) (hf : t.forced = s.forced) :
+    ScreensOk t := by
+  obtain ⟨a, b, c, d⟩ := hs
+  exact ⟨by simpa [monitors, h] using a, by simpa [visible, h] using b, by simpa [visible, h] using c,
+    by rw [h, allowedOn_congr hf]; exact d⟩
 
 theorem replaceAt_fst (l : List (MonId × WsName)) (m : MonId) (w : WsName) :
     (replaceAt l m w).map (·.1) = l.map (·.1) := by
   simp only [replaceAt, List.map_map]; congr 1; funext p; simp only [Function.comp]; split <;> rfl
 
-theorem replaceWs_fst (l : List (MonId × WsName)) (o n : WsName) : (replaceWs l o n).map (·.1) = l.map (·.1) := by
-  simp only [replaceWs, List.map_map]; congr 1; funext p; simp only [Function.comp]; split <;> rfl
-
-theorem mem_replaceWs {l : List (MonId × WsName)} {o n x : WsName} (h : x ∈ (replaceWs l o n).map (·.2)) :
-    (x ∈ l.map (·.2) ∧ x ≠ o) ∨ (x = n ∧ o ∈ l.map (·.2)) := by
-  simp only [replaceWs, List.map_map, List.mem_map, Function.comp] at h ⊢
-  obtain ⟨p, hp, rfl⟩ := h
-  by_cases hpo : p.2 = o
-  · simp only [hpo, if_true]; exact Or.inr ⟨trivial, p, hp, hpo⟩
-  · simp only [hpo, if_false]; exact Or.inl ⟨⟨p, hp, rfl⟩, hpo⟩
+theorem mem_replaceAt_pair {l : List (MonId × WsName)} {m : MonId} {w : WsName} {p : MonId × WsName}
+    (h : p ∈ replaceAt l m w) : (p ∈ l ∧ p.1 ≠ m) ∨ p = (m, w) := by
+  simp only [replaceAt, List.mem_map] at h
+  obtain ⟨q, hq, rfl⟩ := h
+  by_cases hqm : q.1 = m
+  · simp [hqm]
+  · simp only [hqm, if_false]; exact Or.inl ⟨hq, hqm⟩
 
 theorem mem_replaceAt {l : List (MonId × WsName)} {m : MonId} {w x : WsName} (h : x ∈ (replaceAt l m w).map (·.2)) :
     x ∈ l.map (·.2) ∨ x = w := by
-  simp only [replaceAt, List.map_map, List.mem_map, Function.comp] at h ⊢
-  obtain ⟨p, hp, rfl⟩ := h
-  by_cases hpm : p.1 = m
-  · simp [hpm]
-  · simp only [hpm, if_false]; exact Or.inl ⟨p, hp, rfl⟩
-
-theorem replaceWs_nodup : ∀ {l : List (MonId × WsName)} {o n : WsName},
-    (l.map (·.2)).Nodup → n ∉ l.map (·.2) → ((replaceWs l o n).map (·.2)).Nodup
-  | [], _, _, _, _ => by simp [replaceWs]
-  | p :: t, o, n, hl, hn => by
-    simp only [List.map_cons, List.nodup_cons, List.mem_cons, not_or] at hl hn
-    have ih := replaceWs_nodup (o := o) hl.2 hn.2
-    have hcons : (replaceWs (p :: t) o n).map (·.2) = (if p.2 = o then n else p.2) :: (replaceWs t o n).map (·.2) := by
-      simp only [replaceWs, List.map_cons]; split <;> rfl
-    rw [hcons, List.nodup_cons]
-    refine ⟨fun hy => ?_, ih⟩
-    rcases mem_replaceWs hy with ⟨hy, hyo⟩ | ⟨hyn, hot⟩
-    · split at hy
-      · exact hn.2 hy
-      · exact hl.1 hy
-    · split at hyn
-      · rename_i hpo; exact hl.1 (hpo ▸ hot)
-      · exact hn.1 hyn.symm
+  obtain ⟨p, hp, rfl⟩ := List.mem_map.mp h
+  rcases mem_replaceAt_pair hp with ⟨hp, _⟩ | rfl
+  · exact Or.inl (List.mem_map_of_mem hp)
+  · exact Or.inr rfl
 
 theorem replaceAt_of_not_mem : ∀ {l : List (MonId × WsName)} {m : MonId} (w : WsName),
     m ∉ l.map (·.1) → replaceAt l m w = l
@@ -282,23 +271,33 @@ theorem replaceAt_nodup : ∀ {l : List (MonId × WsName)} {m : MonId} {w : WsNa
       · exact hl.1 hy
       · exact hw.1 hy.symm
 
-theorem freshNum_spec (vis : List WsName) : WsName.num (freshNum vis) ∉ vis := by
-  unfold freshNum
-  split
-  · rename_i hf; simpa using (mem_of_find?_some hf).2
-  · intro hm
-    have := le_sum_of_mem (List.mem_map_of_mem (f := WsName.numOf) hm)
-    simp only [WsName.numOf] at this
-    omega
+theorem stubOk_spec {s : State} {mon : MonId} {ws : WsName} (h : s.stubOk mon ws = true) :
+    ws.isHome = false ∧ ws ∉ s.visible ∧ s.allowedOn ws mon = true := by
+  simp only [stubOk, Bool.and_eq_true, Bool.not_eq_true'] at h
+  exact ⟨h.1.1, by simpa using h.1.2, h.2⟩
 
-theorem stub_spec (s : State) (m : MonId) : s.stub m ∉ s.visible ∧ (s.stub m).isHome = false := by
+theorem freshNum_spec (s : State) (mon : MonId) : s.stubOk mon (.num (s.freshNum mon)) = true := by
+  unfold freshNum
+  dsimp only
+  split
+  · rename_i hf; exact (mem_of_find?_some hf).2
+  · generalize hN : ((s.visible ++ s.forced.map (·.1)).map WsName.numOf).sum = N
+    have big : ∀ w ∈ s.visible ++ s.forced.map (·.1), w ≠ .num (N + 1) := by
+      rintro w hw rfl
+      have := le_sum_of_mem (List.mem_map_of_mem (f := WsName.numOf) hw)
+      simp only [WsName.numOf] at this; omega
+    have hvis : WsName.num (N + 1) ∉ s.visible := fun h => big _ (List.mem_append_left _ h) rfl
+    have hforced : s.forcedOf (.num (N + 1)) = none := by
+      simp only [forcedOf, Option.map_eq_none_iff, List.find?_eq_none]
+      intro q hq hqe
+      exact big q.1 (List.mem_append_right _ (List.mem_map_of_mem hq)) (by simpa using hqe)
+    simp [stubOk, WsName.isHome, hvis, allowedOn, hforced]
+
+theorem stub_spec (s : State) (m : MonId) : s.stubOk m (s.stub m) = true := by
   unfold stub
   split
-  · rename_i hf
-    have := (mem_of_find?_some hf).2
-    simp only [Bool.and_eq_true, Bool.not_eq_true'] at this
-    exact ⟨by simpa using this.2, this.1⟩
-  · exact ⟨freshNum_spec _, rfl⟩
+  · rename_i hf; exact (mem_of_find?_some hf).2
+  · exact freshNum_spec s m
 
 theorem monitorOf_none {s : State} {ws : WsName} (h : s.monitorOf ws = none) : ws ∉ s.visible := by
   simp only [monitorOf, Option.map_eq_none_iff, List.find?_eq_none] at h
@@ -306,29 +305,46 @@ theorem monitorOf_none {s : State} {ws : WsName} (h : s.monitorOf ws = none) : w
   intro p hp hpw
   exact h p hp (by simp [hpw])
 
-theorem vacate_ok {s : State} (hs : ScreensOk s) (ws : WsName) :
-    ScreensOk (s.vacate ws) ∧ ws ∉ (s.vacate ws).visible ∧ (s.vacate ws).screens.length = s.screens.length := by
-  unfold vacate
-  split
-  · rename_i m _
-    have hst := stub_spec s m
-    refine ⟨⟨?_, ?_, ?_⟩, ?_, by simp [replaceWs]⟩
-    · simpa [monitors, replaceWs_fst] using hs.monsNodup
-    · exact replaceWs_nodup hs.visNodup hst.1
-    · intro x hx
-      rcases mem_replaceWs hx with ⟨hx, _⟩ | ⟨rfl, _⟩
-      · exact hs.noHome x hx
-      · exact hst.2
-    · intro hx
-      rcases mem_replaceWs hx with ⟨_, hne⟩ | ⟨rfl, hin⟩
-      · exact hne rfl
-      · exact hst.1 hin
-  · exact ⟨hs, monitorOf_none ‹_›, rfl⟩
+theorem monitorOf_some {s : State} {ws : WsName} {m : MonId} (h : s.monitorOf ws = some m) : (m, ws) ∈ s.screens := by
+  simp only [monitorOf, Option.map_eq_some_iff] at h
+  obtain ⟨p, hp, rfl⟩ := h
+  have := mem_of_find?_some hp
+  have hw : p.2 = ws := by simpa using this.2
+  rw [← hw]; exact this.1
 
 @[simp] theorem vacate_windows (s : State) (ws : WsName) : (s.vacate ws).windows = s.windows := by
   unfold vacate; split <;> rfl
 @[simp] theorem vacate_scratchpads (s : State) (ws : WsName) : (s.vacate ws).scratchpads = s.scratchpads := by
   unfold vacate; split <;> rfl
+@[simp] theorem vacate_forced (s : State) (ws : WsName) : (s.vacate ws).forced = s.forced := by
+  unfold vacate; split <;> rfl
+
+theorem vacate_ok {s : State} (hs : ScreensOk s) (ws : WsName) :
+    ScreensOk (s.vacate ws) ∧ ws ∉ (s.vacate ws).visible ∧ (s.vacate ws).screens.length = s.screens.length := by
+  unfold vacate
+  split
+  · rename_i m hm
+    have hin := monitorOf_some hm
+    obtain ⟨sth, stv, sta⟩ := stubOk_spec (stub_spec s m)
+    refine ⟨⟨?_, ?_, ?_, ?_⟩, ?_, by simp [replaceAt]⟩
+    · simpa [monitors, replaceAt_fst] using hs.monsNodup
+    · exact replaceAt_nodup hs.monsNodup hs.visNodup stv
+    · intro x hx
+      rcases mem_replaceAt hx with hx | rfl
+      · exact hs.noHome x hx
+      · exact sth
+    · intro p hp
+      rcases mem_replaceAt_pair hp with ⟨hp, _⟩ | rfl
+      · exact hs.forcedOk p hp
+      · exact sta
+    · intro hx
+      obtain ⟨p, hp, hpw⟩ := List.mem_map.mp hx
+      rcases mem_replaceAt_pair hp with ⟨hp, hpm⟩ | rfl
+      · exact hpm (congrArg Prod.fst (nodup_map_inj hs.visNodup hp hin hpw))
+      · have hv : ws ∈ s.visible := List.mem_map_of_mem (f := (·.2)) hin
+        have hpw : s.stub m = ws := hpw
+        exact stv (hpw ▸ hv)
+  · exact ⟨hs, monitorOf_none ‹_›, rfl⟩
 
 theorem setActive_ok {s : State} (hs : ScreensOk s) (mon : MonId) (ws : WsName) :
     ScreensOk (s.setActive mon ws) ∧ (s.setActive mon ws).screens.length = s.screens.length := by
@@ -337,19 +353,27 @@ theorem setActive_ok {s : State} (hs : ScreensOk s) (mon : MonId) (ws : WsName) 
   · exact ⟨hs, rfl⟩
   · rename_i hc
     have hhome : ws.isHome = false := by simp_all
+    have hallow : s.allowedOn ws mon = true := by simp_all
     obtain ⟨hv, hws, hlen⟩ := vacate_ok hs ws
-    refine ⟨⟨?_, ?_, ?_⟩, by simp [replaceAt, hlen]⟩
+    refine ⟨⟨?_, ?_, ?_, ?_⟩, by simp [replaceAt, hlen]⟩
     · simpa [monitors, replaceAt_fst] using hv.monsNodup
     · exact replaceAt_nodup hv.monsNodup hv.visNodup hws
     · intro x hx
       rcases mem_replaceAt hx with hx | rfl
       · exact hv.noHome x hx
       · exact hhome
+    · intro p hp
+      rcases mem_replaceAt_pair hp with ⟨hp, _⟩ | rfl
+      · exact hv.forcedOk p hp
+      · show (s.vacate ws).allowedOn ws mon = true
+        rw [allowedOn_congr (vacate_forced s ws)]; exact hallow
 
 @[simp] theorem setActive_windows (s : State) (mon : MonId) (ws : WsName) : (s.setActive mon ws).windows = s.windows := by
   unfold setActive; split <;> simp
 @[simp] theorem setActive_scratchpads (s : State) (mon : MonId) (ws : WsName) :
     (s.setActive mon ws).scratchpads = s.scratchpads := by
+  unfold setActive; split <;> simp
+@[simp] theorem setActive_forced (s : State) (mon : MonId) (ws : WsName) : (s.setActive mon ws).forced = s.forced := by
   unfold setActive; split <;> simp
 
 /-! ## Windows -/
@@ -425,12 +449,12 @@ structure Struct (s : State) : Prop where
   ne : s.screens ≠ []
 
 theorem Struct.congr {s t : State} (h : Struct s) (h1 : t.screens = s.screens) (h2 : t.windows = s.windows)
-    (h3 : t.scratchpads = s.scratchpads) : Struct t :=
-  ⟨h.screens.congr h1, h.windows.congr h2 h3, h1 ▸ h.ne⟩
+    (h3 : t.scratchpads = s.scratchpads) (h4 : t.forced = s.forced) : Struct t :=
+  ⟨h.screens.congr h1 h4, h.windows.congr h2 h3, h1 ▸ h.ne⟩
 
 theorem Struct.withWindows {s : State} (h : Struct s) {l : List Win} (hw : WindowsOk { s with windows := l }) :
     Struct { s with windows := l } :=
-  ⟨h.screens.congr rfl, hw, h.ne⟩
+  ⟨h.screens.congr rfl rfl, hw, h.ne⟩
 
 theorem Struct.setActive {s : State} (h : Struct s) (mon : MonId) (ws : WsName) : Struct (s.setActive mon ws) := by
   obtain ⟨hs, hlen⟩ := setActive_ok h.screens mon ws
@@ -438,7 +462,7 @@ theorem Struct.setActive {s : State} (h : Struct s) (mon : MonId) (ws : WsName) 
   intro he; rw [he] at hlen; exact h.ne (List.length_eq_zero_iff.mp hlen.symm)
 
 theorem Struct.focusOn {s : State} (h : Struct s) (ws : WsName) (win : Option WinId) : Struct (s.focusOn ws win) :=
-  (h.setActive _ ws).congr rfl rfl rfl
+  (h.setActive _ ws).congr rfl rfl rfl rfl
 
 theorem Struct.focusWorkspace {s : State} (h : Struct s) (ws : WsName) : Struct (s.focusWorkspace ws) := by
   unfold State.focusWorkspace; split
@@ -472,7 +496,7 @@ theorem toggleScratchpad_struct {s : State} (h : Struct s) (name : String) : Str
   · exact h
   · simp only
     split
-    · refine h.congr rfl rfl rfl
+    · refine h.congr rfl rfl rfl rfl
     · split
       · exact h
       · rename_i hfh
@@ -482,15 +506,38 @@ theorem toggleScratchpad_struct {s : State} (h : Struct s) (name : String) : Str
           · exact (h.withWindows (sendHome_ok h.windows _)).focusOn ..
           · exact h.focusOn ..
 
-theorem windowAppeared_struct {s : State} (h : Struct s) (hf : s.focusWs.isHome = false) (id : WinId) (app : AppId) :
-    Struct (s.windowAppeared id app) := by
+theorem insertInWs_perm (w : Win) : ∀ (l : List Win) (i : Nat), (insertInWs w l i).Perm (w :: l)
+  | [], _ => .refl _
+  | x :: t, i => by
+    unfold insertInWs
+    split
+    · split
+      · exact .refl _
+      · exact ((insertInWs_perm w t _).cons x).trans (.swap w x t)
+    · exact ((insertInWs_perm w t i).cons x).trans (.swap w x t)
+
+theorem insert_ok {s : State} (hw : WindowsOk s) {w : Win} (i : Nat) (hid : w.id ∉ s.windows.map (·.id))
+    (hhome : w.ws.isHome = true → s.homeOf w.app = some w.ws) :
+    WindowsOk { s with windows := insertInWs w s.windows i } := by
+  have hp := insertInWs_perm w s.windows i
+  refine ⟨(hp.map _).nodup_iff.mpr ?_, fun x hx => ?_⟩
+  · simp only [List.map_cons, List.nodup_cons]; exact ⟨hid, hw.idsNodup⟩
+  · rcases List.mem_cons.mp (hp.mem_iff.mp hx) with rfl | hx
+    · exact hhome
+    · exact hw.homesOwned x hx
+
+theorem windowAppeared_struct {s : State} (h : Struct s) (hf : s.focusWs.isHome = false) (id : WinId) (app : AppId)
+    (ws : WsName) (floating : Bool) (index : Nat) : Struct (s.windowAppeared id app ws floating index) := by
   unfold State.windowAppeared
   split
   · exact h
   · rename_i hid
     have hid : s.windows.any (·.id == id) = false := by simpa using hid
     split
-    · exact h.withWindows (append_ok h.windows hid (by simp [hf]))
+    · refine h.withWindows (insert_ok h.windows index (by simpa using hid) ?_)
+      intro hh; simp only at hh; split at hh
+      · rw [hf] at hh; contradiction
+      · simp_all
     · rename_i sp hsp
       have hhome : s.homeOf app = some (.home sp.name) := by simp [homeOf, hsp]
       split
@@ -501,7 +548,7 @@ theorem windowAppeared_struct {s : State} (h : Struct s) (hf : s.focusWs.isHome 
           have hw := append_ok (w := ({ id, app, ws, floating := true } : Win)) h.windows hid
             (fun hh => absurd hh hws)
           refine Struct.focusOn ?_ ws (some id)
-          exact (h.withWindows hw).congr rfl rfl rfl
+          exact (h.withWindows hw).congr rfl rfl rfl rfl
       · refine h.withWindows (append_ok h.windows hid ?_)
         simp only
         cases hfind : s.windows.find? (fun w => w.app == app && !w.ws.isHome) with
@@ -512,7 +559,7 @@ theorem windowAppeared_struct {s : State} (h : Struct s) (hf : s.focusWs.isHome 
           simp [this.2]
 
 theorem windowClosed_struct {s : State} (h : Struct s) (id : WinId) : Struct (s.windowClosed id) :=
-  (h.withWindows (filter_ok h.windows _)).congr rfl rfl rfl
+  (h.withWindows (filter_ok h.windows _)).congr rfl rfl rfl rfl
 
 theorem moveWindowToWorkspace_struct {s : State} (h : Struct s) (id : WinId) (ws : WsName) (focusFollows : Bool) :
     Struct (s.moveWindowToWorkspace id ws focusFollows) := by
@@ -544,8 +591,10 @@ theorem addScreen_ok {s : State} (hs : ScreensOk s) (mon : MonId) : ScreensOk (s
   split
   · exact hs
   · rename_i hmon
-    have hst := stub_spec s mon
-    refine ⟨?_, ?_, ?_⟩
+    have hst := stubOk_spec (stub_spec s mon)
+    have hst : s.stub mon ∉ s.visible ∧ (s.stub mon).isHome = false ∧ s.allowedOn (s.stub mon) mon = true :=
+      ⟨hst.2.1, hst.1, hst.2.2⟩
+    refine ⟨?_, ?_, ?_, ?_⟩
     · simp only [monitors, List.map_append, List.map_cons, List.map_nil]
       exact List.nodup_append.mpr ⟨hs.monsNodup, (by simp),
         fun a ha b hb hab => by simp at hb; subst hb hab; simp_all [monitors]⟩
@@ -556,7 +605,15 @@ theorem addScreen_ok {s : State} (hs : ScreensOk s) (mon : MonId) : ScreensOk (s
       simp only [visible, List.map_append, List.mem_append, List.map_cons, List.map_nil, List.mem_singleton] at hx
       rcases hx with hx | rfl
       · exact hs.noHome x hx
-      · exact hst.2
+      · exact hst.2.1
+    · intro p hp
+      simp only [List.mem_append, List.mem_singleton] at hp
+      rcases hp with hp | rfl
+      · exact hs.forcedOk p hp
+      · exact hst.2.2
+
+theorem addScreen_forced (s : State) (mon : MonId) : (s.addScreen mon).forced = s.forced := by
+  unfold State.addScreen; split <;> rfl
 
 theorem addScreen_windows (s : State) (mon : MonId) : (s.addScreen mon).windows = s.windows := by
   unfold State.addScreen; split <;> rfl
@@ -568,27 +625,84 @@ theorem foldl_invariant {α β} (P : α → Prop) (f : α → β → α) (hf : �
   | [], _, h => h
   | b :: l, a, h => foldl_invariant P f hf l (f a b) (hf a b h)
 
-theorem monitorsChanged_struct {s : State} (h : Struct s) (mons : List MonId) : Struct (s.monitorsChanged mons) := by
+theorem keepScreens_ok {s : State} (hs : ScreensOk s) (mons : List MonId) (forced : List (WsName × MonId)) :
+    ScreensOk (s.keepScreens mons forced) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact hs.monsNodup.sublist ((List.filter_sublist).map _)
+  · exact hs.visNodup.sublist ((List.filter_sublist).map _)
+  · intro x hx
+    simp only [keepScreens, visible, List.mem_map, List.mem_filter] at hx
+    obtain ⟨p, ⟨hp, _⟩, rfl⟩ := hx
+    exact hs.noHome _ (List.mem_map_of_mem hp)
+  · intro p hp
+    simp only [keepScreens, List.mem_filter, Bool.and_eq_true] at hp
+    exact hp.2.2
+
+theorem monitorsChanged_struct {s : State} (h : Struct s) (mons : List MonId) (forced : List (WsName × MonId)) :
+    Struct (s.monitorsChanged mons forced) := by
   unfold State.monitorsChanged
   simp only
-  generalize hs' : mons.foldl State.addScreen { s with screens := s.screens.filter (mons.contains ·.1) } = s'
+  generalize hs' : mons.foldl State.addScreen (s.keepScreens mons forced) = s'
   split
   · exact h
   · rename_i hne
-    have hfilter : ScreensOk { s with screens := s.screens.filter (mons.contains ·.1) } := by
-      refine ⟨?_, ?_, ?_⟩
-      · exact h.screens.monsNodup.sublist ((List.filter_sublist).map _)
-      · exact h.screens.visNodup.sublist ((List.filter_sublist).map _)
-      · intro x hx
-        simp only [visible, List.mem_map, List.mem_filter] at hx
-        obtain ⟨p, ⟨hp, _⟩, rfl⟩ := hx
-        exact h.screens.noHome _ (List.mem_map_of_mem hp)
     have P := foldl_invariant
       (fun t : State => ScreensOk t ∧ t.windows = s.windows ∧ t.scratchpads = s.scratchpads) State.addScreen
       (fun a b ⟨ha, hw, hsp⟩ => ⟨addScreen_ok ha b, by rw [addScreen_windows, hw], by rw [addScreen_scratchpads, hsp]⟩)
-      mons _ ⟨hfilter, rfl, rfl⟩
+      mons _ ⟨keepScreens_ok h.screens mons forced, rfl, rfl⟩
     rw [hs'] at P
     exact ⟨P.1, h.windows.congr P.2.1 P.2.2, by simpa using hne⟩
+
+theorem placeWindow_struct {s : State} (h : Struct s) (id : WinId) (ws : WsName) (index : Nat)
+    (floating : Option Bool) : Struct (s.placeWindow id ws index floating) := by
+  unfold State.placeWindow
+  split
+  · exact h
+  · rename_i w hw
+    obtain ⟨hm, rfl⟩ := window?_spec hw
+    simp only
+    split
+    · exact h
+    · rename_i hg
+      refine h.withWindows (insert_ok (filter_ok h.windows (·.id != w.id)) index (by simp) ?_)
+      intro hh
+      simp only at hh ⊢
+      cases hs : (s.homeOf w.app).isSome
+      · simp_all
+      · have hws : w.ws = ws := by simp_all
+        subst hws
+        exact h.windows.homesOwned w hm hh
+
+theorem setFloating_struct {s : State} (h : Struct s) (id : WinId) (floating : Bool) :
+    Struct (s.setFloating id floating) := by
+  have hf : ∀ w : Win, (if w.id = id && (s.homeOf w.app).isNone then { w with floating } else w).id = w.id ∧
+      (if w.id = id && (s.homeOf w.app).isNone then { w with floating } else w).ws = w.ws ∧
+      (if w.id = id && (s.homeOf w.app).isNone then { w with floating } else w).app = w.app :=
+    fun w => by split <;> exact ⟨rfl, rfl, rfl⟩
+  refine h.withWindows ⟨idsNodup_map (fun w => (hf w).1) h.windows.idsNodup, ?_⟩
+  simp only [List.mem_map]
+  rintro _ ⟨w, hm, rfl⟩ hhome
+  rw [(hf w).2.1] at hhome ⊢
+  rw [(hf w).2.2]
+  exact h.windows.homesOwned w hm hhome
+
+theorem configChanged_struct {s : State} (h : Struct s) (hf : s.focusWs.isHome = false)
+    (scratchpads : List Scratchpad) (forced : List (WsName × MonId)) :
+    Struct (s.configChanged scratchpads forced) := by
+  unfold State.configChanged
+  simp only
+  apply monitorsChanged_struct
+  refine ⟨h.screens.congr rfl rfl, ⟨?_, ?_⟩, h.ne⟩
+  · refine idsNodup_map (fun w => ?_) h.windows.idsNodup
+    split <;> rfl
+  · simp only [State.evictFromHomes, List.mem_map]
+    rintro _ ⟨w, _, rfl⟩ hhome
+    split
+    · rename_i hc; rw [if_pos hc] at hhome; rw [hf] at hhome; contradiction
+    · rename_i hc
+      rw [if_neg hc] at hhome
+      simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, not_and, Decidable.not_not] at hc
+      exact hc hhome
 
 theorem raw_struct {s : State} (hinv : Inv s) (op : Op) : Struct (s.raw op) := by
   have h := hinv.struct
@@ -604,22 +718,28 @@ theorem raw_struct {s : State} (hinv : Inv s) (op : Op) : Struct (s.raw op) := b
     · exact h.focusWorkspace _
     · exact h
   | moveWorkspaceToMonitor mon => exact h.setActive mon _
+  | showWorkspace mon ws => exact h.setActive mon ws
   | moveWindowToWorkspace id ws focusFollows => exact moveWindowToWorkspace_struct h id ws focusFollows
+  | placeWindow id ws index floating => exact placeWindow_struct h id ws index floating
+  | setFloating id floating => exact setFloating_struct h id floating
   | toggleScratchpad name => exact toggleScratchpad_struct h name
-  | windowAppeared id app => exact windowAppeared_struct h hinv.focusWs_not_home id app
+  | windowAppeared id app ws floating index =>
+    exact windowAppeared_struct h hinv.focusWs_not_home id app ws floating index
   | windowClosed id => exact windowClosed_struct h id
-  | monitorsChanged mons => exact monitorsChanged_struct h mons
+  | monitorsChanged mons forced => exact monitorsChanged_struct h mons forced
+  | configChanged scratchpads forced => exact configChanged_struct h hinv.focusWs_not_home scratchpads forced
 
 /-! ## The theorems -/
 
 /-- Every op preserves the invariant -/
 theorem step_inv {s : State} (h : Inv s) (op : Op) : Inv (s.step op) := by
   have hr := raw_struct h op
-  exact hideUnfocused_inv _ (hr.screens.congr (by simp)) (hr.windows.congr (by simp) (by simp))
+  exact hideUnfocused_inv _ (hr.screens.congr (by simp) (by simp)) (hr.windows.congr (by simp) (by simp))
     (fixFocus_focusOk _ hr.ne)
 
 theorem init_inv (scratchpads : List Scratchpad) : Inv (init scratchpads) := by
-  refine ⟨⟨by simp [init, monitors], by simp [init, visible], by simp [init, visible, WsName.isHome]⟩,
+  refine ⟨⟨by simp [init, monitors], by simp [init, visible], by simp [init, visible, WsName.isHome],
+      by simp [init, allowedOn, forcedOf]⟩,
     ⟨by simp [init], by simp [init]⟩, ⟨by simp [init, visible], by simp [init]⟩, by simp [ScratchpadsOk, init]⟩
 
 /-- The invariant holds in every state dwmac can reach -/

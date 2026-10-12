@@ -57,8 +57,11 @@ structure Scratchpad where
 deriving DecidableEq, Repr, Inhabited
 
 structure State where
-  /-- From the config; no op changes them -/
+  /-- From the config -/
   scratchpads : List Scratchpad
+  /-- `workspace-to-monitor-force-assignment`, resolved against the connected monitors: a workspace listed here is
+  only ever shown on its monitor -/
+  forced : List (WsName × MonId)
   /-- Each monitor and the workspace it shows. The first monitor is the main one -/
   screens : List (MonId × WsName)
   /-- In tiling order -/
@@ -87,14 +90,22 @@ def focusedApp (s : State) : Option AppId := s.focusWin.bind fun id => (s.window
 
 def monitorOf (s : State) (ws : WsName) : Option MonId := (s.screens.find? (·.2 == ws)).map (·.1)
 
-/-- The monitor a workspace is (or would be) shown on: its current one, else the last one, else the main one -/
+def forcedOf (s : State) (ws : WsName) : Option MonId := (s.forced.find? (·.1 == ws)).map (·.2)
+/-- Whether the force assignment lets `ws` be shown on `mon` -/
+def allowedOn (s : State) (ws : WsName) (mon : MonId) : Bool := (s.forcedOf ws).all (· == mon)
+
+/-- The monitor a workspace is (or would be) shown on: its forced one, else its current one, else the last one,
+else the main one -/
 def workspaceMonitor (s : State) (ws : WsName) : MonId :=
-  match s.monitorOf ws with
+  match s.forcedOf ws with
   | some m => m
   | none =>
-    match s.assigned.find? (fun p => p.1 == ws && s.monitors.contains p.2) with
-    | some p => p.2
-    | none => s.monitors.head?.getD 0
+    match s.monitorOf ws with
+    | some m => m
+    | none =>
+      match s.assigned.find? (fun p => p.1 == ws && s.monitors.contains p.2) with
+      | some p => p.2
+      | none => s.monitors.head?.getD 0
 
 /-- Whether `id` is a window of `ws` -/
 def hasWindow (s : State) (ws : WsName) (id : WinId) : Bool := s.windows.any (fun w => w.id == id && w.ws == ws)
@@ -107,35 +118,38 @@ def mruWin (s : State) (ws : WsName) : Option WinId :=
 
 /-! ## Stub workspaces -/
 
-/-- The lowest `n ≥ 1` such that workspace `n` isn't shown -/
-def freshNum (vis : List WsName) : Nat :=
-  match (List.range (vis.length + 1)).find? (fun n => !vis.contains (.num (n + 1))) with
+/-- Whether `ws` can be shown on `mon` in place of what's there now -/
+def stubOk (s : State) (mon : MonId) (ws : WsName) : Bool := !ws.isHome && !s.visible.contains ws && s.allowedOn ws mon
+
+/-- The lowest `n ≥ 1` such that workspace `n` can be shown on `mon` -/
+def freshNum (s : State) (mon : MonId) : Nat :=
+  let bound := s.visible.length + s.forced.length + 1
+  match (List.range bound).find? (fun n => s.stubOk mon (.num (n + 1))) with
   | some n => n + 1
-  | none => (vis.map WsName.numOf).sum + 1 -- Unreachable: one of `vis.length + 1` numbers is free
+  -- Unreachable (one of `bound` numbers is free), but this one is free by construction
+  | none => ((s.visible ++ s.forced.map (·.1)).map WsName.numOf).sum + 1
 
 /-- A workspace to show on `mon` when its workspace moves elsewhere: one last shown there, else a numbered one -/
 def stub (s : State) (mon : MonId) : WsName :=
-  match (s.assigned.filter (·.2 == mon)).find? (fun p => !p.1.isHome && !s.visible.contains p.1) with
+  match (s.assigned.filter (·.2 == mon)).find? (fun p => s.stubOk mon p.1) with
   | some p => p.1
-  | none => .num (freshNum s.visible)
+  | none => .num (s.freshNum mon)
 
 /-! ## Primitive transitions -/
 
 def replaceAt (l : List (MonId × WsName)) (m : MonId) (w : WsName) : List (MonId × WsName) :=
   l.map fun p => if p.1 = m then (p.1, w) else p
 
-def replaceWs (l : List (MonId × WsName)) (old new : WsName) : List (MonId × WsName) :=
-  l.map fun p => if p.2 = old then (p.1, new) else p
-
 /-- Take `ws` off its monitor, if it's shown, putting a stub there -/
 def vacate (s : State) (ws : WsName) : State :=
   match s.monitorOf ws with
-  | some m => let st := s.stub m; { s with screens := replaceWs s.screens ws st, assigned := (st, m) :: s.assigned }
+  | some m => let st := s.stub m; { s with screens := replaceAt s.screens m st, assigned := (st, m) :: s.assigned }
   | none => s
 
-/-- Show `ws` on `mon`. If it's shown elsewhere, that monitor gets a stub. Scratchpad homes are never shown -/
+/-- Show `ws` on `mon`. If it's shown elsewhere, that monitor gets a stub. Scratchpad homes are never shown, and
+forced workspaces only on their monitor -/
 def setActive (s : State) (mon : MonId) (ws : WsName) : State :=
-  if ws.isHome || !s.monitors.contains mon || s.monitorOf ws == some mon then s
+  if ws.isHome || !s.monitors.contains mon || !s.allowedOn ws mon || s.monitorOf ws == some mon then s
   else
     let s := s.vacate ws
     { s with screens := replaceAt s.screens mon ws, assigned := (ws, mon) :: s.assigned }
@@ -162,6 +176,16 @@ def primary (s : State) (wins : List Win) : Option WinId :=
   | some id => some id
   | none => wins.getLast?.map (·.id)
 
+/-- Insert `w` so that it's the `i`th window of its workspace (or its last, if there are fewer) -/
+def insertInWs (w : Win) : List Win → Nat → List Win
+  | [], _ => [w]
+  | x :: t, i =>
+    if x.ws = w.ws then
+      match i with
+      | 0 => w :: x :: t
+      | i + 1 => x :: insertInWs w t i
+    else x :: insertInWs w t i
+
 /-! ## Ops -/
 
 inductive Op where
@@ -171,11 +195,19 @@ inductive Op where
   | summonWorkspace (ws : WsName)
   | focusMonitor (mon : MonId)
   | moveWorkspaceToMonitor (mon : MonId)
+  /-- Show `ws` on `mon` without focusing it -/
+  | showWorkspace (mon : MonId) (ws : WsName)
   | moveWindowToWorkspace (id : WinId) (ws : WsName) (focusFollows : Bool)
+  /-- Put a window at `index` in `ws` (swap, move-node-to-master, dragging with the mouse, restoring windows) -/
+  | placeWindow (id : WinId) (ws : WsName) (index : Nat) (floating : Option Bool)
+  | setFloating (id : WinId) (floating : Bool)
   | toggleScratchpad (name : String)
-  | windowAppeared (id : WinId) (app : AppId)
+  /-- A new window. Swift picks where it would go (`ws`, `floating`, `index`); scratchpads override that -/
+  | windowAppeared (id : WinId) (app : AppId) (ws : WsName) (floating : Bool) (index : Nat)
   | windowClosed (id : WinId)
-  | monitorsChanged (mons : List MonId)
+  /-- The connected monitors, main first, and the force assignment resolved against them -/
+  | monitorsChanged (mons : List MonId) (forced : List (WsName × MonId))
+  | configChanged (scratchpads : List Scratchpad) (forced : List (WsName × MonId))
 deriving Repr
 
 def focusWorkspace (s : State) (ws : WsName) : State :=
@@ -207,11 +239,13 @@ def toggleScratchpad (s : State) (name : String) : State :=
       s.focusOn s.focusWs (s.mruWin s.focusWs)
     else s.focusOn s.focusWs (s.primary here)
 
-def windowAppeared (s : State) (id : WinId) (app : AppId) : State :=
+def windowAppeared (s : State) (id : WinId) (app : AppId) (ws : WsName) (floating : Bool) (index : Nat) : State :=
   if s.windows.any (·.id == id) then s
   else
     match s.scratchpadOf app with
-    | none => { s with windows := s.windows ++ [({ id, app, ws := s.focusWs, floating := false } : Win)] }
+    | none =>
+      let ws := if ws.isHome then s.focusWs else ws
+      { s with windows := insertInWs { id, app, ws, floating } s.windows index }
     | some sp =>
       match s.pending.find? (·.1 == sp.name) with
       | some (_, ws) =>
@@ -240,6 +274,21 @@ def moveWindowToWorkspace (s : State) (id : WinId) (ws : WsName) (focusFollows :
       let s := { s with windows := s.windows.filter (·.id != id) ++ [{ w with ws }] }
       if focusFollows then s.focusOn ws (some id) else s
 
+def placeWindow (s : State) (id : WinId) (ws : WsName) (index : Nat) (floating : Option Bool) : State :=
+  match s.window? id with
+  | none => s
+  | some w =>
+    -- A scratchpad window can only be reordered where it is, and stays floating
+    let isScratchpad := (s.homeOf w.app).isSome
+    if isScratchpad && w.ws != ws || ws.isHome && !isScratchpad then s
+    else
+      let floating := isScratchpad || floating.getD w.floating
+      { s with windows := insertInWs { w with ws, floating } (s.windows.filter (·.id != id)) index }
+
+def setFloating (s : State) (id : WinId) (floating : Bool) : State :=
+  { s with windows := s.windows.map fun w =>
+      if w.id = id && (s.homeOf w.app).isNone then { w with floating } else w }
+
 /-- Add `mon`, showing a stub, unless it's already there -/
 def addScreen (s : State) (mon : MonId) : State :=
   if s.monitors.contains mon then s
@@ -247,10 +296,23 @@ def addScreen (s : State) (mon : MonId) : State :=
     let st := s.stub mon
     { s with screens := s.screens ++ [(mon, st)], assigned := (st, mon) :: s.assigned }
 
-/-- Monitors still connected keep their workspace; new ones get stubs -/
-def monitorsChanged (s : State) (mons : List MonId) : State :=
-  let s' := mons.foldl addScreen { s with screens := s.screens.filter (mons.contains ·.1) }
+/-- Drop disconnected monitors, and those whose workspace the new force assignment doesn't allow there -/
+def keepScreens (s : State) (mons : List MonId) (forced : List (WsName × MonId)) : State :=
+  let s := { s with forced }
+  { s with screens := s.screens.filter fun p => mons.contains p.1 && s.allowedOn p.2 p.1 }
+
+/-- Monitors still connected keep their workspace (if it's still allowed there); the rest get stubs -/
+def monitorsChanged (s : State) (mons : List MonId) (forced : List (WsName × MonId)) : State :=
+  let s' := mons.foldl addScreen (s.keepScreens mons forced)
   if s'.screens.isEmpty then s else s'
+
+/-- Windows left in the home of a scratchpad that no longer owns them go to the focused workspace -/
+def evictFromHomes (s : State) : List Win :=
+  s.windows.map fun w => if w.ws.isHome && s.homeOf w.app != some w.ws then { w with ws := s.focusWs } else w
+
+def configChanged (s : State) (scratchpads : List Scratchpad) (forced : List (WsName × MonId)) : State :=
+  let s := { s with scratchpads }
+  { s with windows := s.evictFromHomes }.monitorsChanged s.monitors forced
 
 def raw (s : State) : Op → State
   | .focusWindow id => s.focusWindow id
@@ -262,11 +324,15 @@ def raw (s : State) : Op → State
     | some (_, ws) => s.focusWorkspace ws
     | none => s
   | .moveWorkspaceToMonitor mon => s.setActive mon s.focusWs
+  | .showWorkspace mon ws => s.setActive mon ws
   | .moveWindowToWorkspace id ws focusFollows => s.moveWindowToWorkspace id ws focusFollows
+  | .placeWindow id ws index floating => s.placeWindow id ws index floating
+  | .setFloating id floating => s.setFloating id floating
   | .toggleScratchpad name => s.toggleScratchpad name
-  | .windowAppeared id app => s.windowAppeared id app
+  | .windowAppeared id app ws floating index => s.windowAppeared id app ws floating index
   | .windowClosed id => s.windowClosed id
-  | .monitorsChanged mons => s.monitorsChanged mons
+  | .monitorsChanged mons forced => s.monitorsChanged mons forced
+  | .configChanged scratchpads forced => s.configChanged scratchpads forced
 
 /-! ## Normalization -/
 
@@ -302,7 +368,7 @@ def step (s : State) (op : Op) : State := (s.raw op).fixFocus.hideUnfocused
 
 /-- dwmac at startup: one monitor showing workspace 1, no windows -/
 def init (scratchpads : List Scratchpad) : State :=
-  { scratchpads, screens := [(0, .num 1)], windows := [], focusWs := .num 1, focusWin := none, mru := [],
+  { scratchpads, forced := [], screens := [(0, .num 1)], windows := [], focusWs := .num 1, focusWin := none, mru := [],
     assigned := [(.num 1, 0)], pending := [] }
 
 end State

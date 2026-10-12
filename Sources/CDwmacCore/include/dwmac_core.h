@@ -15,3 +15,11 @@ typedef struct {
 /// Proven (Lean/DwmacCore/MasterStack.lean): no two tiles overlap and every tile lies within the workspace.
 size_t dwmac_master_stack(uint32_t w, uint32_t h, uint32_t gap_h, uint32_t gap_v, uint32_t mfact_permille,
                           bool vertical, bool master_at_stop, uint32_t n, DwmacTile *out, size_t cap);
+
+/// The window manager's state machine (Lean/DwmacCore/Model.lean), held here. Proven: whatever ops are applied, no
+/// scratchpad home is ever shown, a scratchpad is either hidden or focused, and focus points at a shown workspace.
+/// Main thread only. Ops and snapshots are text; see Lean/DwmacCore/StateFfi.lean for the format.
+void dwmac_state_init(const char *scratchpads);
+void dwmac_state_step(const char *op);
+/// The caller frees the result
+char *dwmac_state_snapshot(void);
