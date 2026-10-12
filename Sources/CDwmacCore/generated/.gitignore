@@ -1,0 +1,3 @@
+# Copied from Lean/.lake/build/ir by overlays/dwmac (dev.sh, package.nix)
+*
+!.gitignore

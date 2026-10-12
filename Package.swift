@@ -7,7 +7,8 @@ let package = Package(
     name: "DwmacPackage",
     // Runtime support for parameterized protocol types is only available in macOS 13.0.0 or newer
     // And it specifies deploymentTarget for CLI
-    platforms: [.macOS(.v13)],
+    // (Lean's runtime, linked by CDwmacCore, is built for macOS 14)
+    platforms: [.macOS(.v14)],
     // Products define the executables and libraries a package produces, making them visible to other packages.
     products: [
         .executable(name: "dwmac", targets: ["Cli"]),
@@ -32,6 +33,18 @@ let package = Package(
             path: "Sources/PrivateApi",
             publicHeadersPath: "include",
         ),
+        // Formally verified algorithms: Lean (Lean/DwmacCore) compiled to C, behind a plain C API. generated/ is
+        // filled from Lean's build by overlays/dwmac (dev.sh, package.nix), which also pass Lean's include path and
+        // runtime libraries
+        .target(
+            name: "CDwmacCore",
+            path: "Sources/CDwmacCore",
+            publicHeadersPath: "include",
+            cSettings: [
+                // Lean's generated code relies on wrapping integer overflow (leanc --print-cflags)
+                .unsafeFlags(["-fwrapv", "-Wno-unused-parameter", "-Wno-unused-label", "-Wno-unused-but-set-variable"]),
+            ],
+        ),
         .target(
             name: "Common",
             dependencies: [
@@ -46,6 +59,7 @@ let package = Package(
                 .product(name: "ISSoundAdditions", package: "ISSoundAdditions"),
                 .product(name: "ShellParserGenerated", package: "ShellParserGenerated"),
                 .product(name: "TOMLKit", package: "TOMLKit"),
+                .target(name: "CDwmacCore"),
                 .target(name: "Common"),
                 .target(name: "PrivateApi"),
             ],

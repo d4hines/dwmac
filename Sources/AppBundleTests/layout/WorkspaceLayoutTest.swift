@@ -58,16 +58,16 @@ final class WorkspaceLayoutTest: XCTestCase {
 
         try await workspace.layoutWorkspace()
 
-        // Master Height = (1079 - 10) * 0.5 = 1069 * 0.5 = 534.5
+        // Tiles are whole points (Lean/DwmacCore/MasterStack.lean). Master Height = floor((1079 - 10) * 0.5) = 534
         // Master Width = 1920
 
         XCTAssertEqual(w1.lastAppliedLayoutPhysicalRect?.width, 1920)
-        XCTAssertEqual(w1.lastAppliedLayoutPhysicalRect?.height, 534.5)
+        XCTAssertEqual(w1.lastAppliedLayoutPhysicalRect?.height, 534)
 
-        // Stack Y = 534.5 + 10 = 544.5
-        // Stack Height = 534.5
-        XCTAssertEqual(w2.lastAppliedLayoutPhysicalRect?.topLeftY, 544.5)
-        XCTAssertEqual(w2.lastAppliedLayoutPhysicalRect?.height, 534.5)
+        // Stack Y = 534 + 10 = 544
+        // Stack Height = the rest: 1079 - 10 - 534 = 535
+        XCTAssertEqual(w2.lastAppliedLayoutPhysicalRect?.topLeftY, 544)
+        XCTAssertEqual(w2.lastAppliedLayoutPhysicalRect?.height, 535)
     }
 
     func testLayoutMasterStackRightMaster() async throws {

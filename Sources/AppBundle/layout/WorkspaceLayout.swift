@@ -21,66 +21,22 @@ extension Workspace {
     @MainActor
     private func layoutMasterStack(_ point: CGPoint, width: CGFloat, height: CGFloat, virtual: Rect, _ context: LayoutContext) async throws {
         let windows = tilingWindows
-        if windows.isEmpty { return }
-
-        if layout == .floating {
-            return
-        }
-
-        if windows.count == 1 {
-            let window = windows[0]
-            try await layoutWindow(window, point, width, height, virtual, context)
-            return
-        }
+        if windows.isEmpty || layout == .floating { return }
 
         let gaps = context.resolvedGaps.inner
-        let gapH = CGFloat(gaps.horizontal)
-        let gapV = CGFloat(gaps.vertical)
-
-        let masterWidth: CGFloat
-        let masterHeight: CGFloat
-        let stackWidth: CGFloat
-        let stackHeight: CGFloat
-
-        if orientation == .h {
-            masterWidth = (width - gapH) * mfact
-            masterHeight = height
-            stackWidth = width - masterWidth - gapH
-            stackHeight = (height - CGFloat(windows.count - 2) * gapV) / CGFloat(windows.count - 1)
-        } else {
-            masterWidth = width
-            masterHeight = (height - gapV) * mfact
-            stackWidth = (width - CGFloat(windows.count - 2) * gapH) / CGFloat(windows.count - 1)
-            stackHeight = height - masterHeight - gapV
-        }
-
-        let masterOrigin: CGPoint
-        let stackOrigin: CGPoint
-
-        if orientation == .h {
-            if config.masterPosition == .right {
-                masterOrigin = point.addingXOffset(stackWidth + gapH)
-                stackOrigin = point
-            } else {
-                masterOrigin = point
-                stackOrigin = point.addingXOffset(masterWidth + gapH)
-            }
-        } else {
-            masterOrigin = point
-            stackOrigin = point.addingYOffset(masterHeight + gapV)
-        }
-
-        // Master window (first in list)
-        try await layoutWindow(windows[0], masterOrigin, masterWidth, masterHeight, virtual, context)
-
-        // Stack windows
-        for i in 1 ..< windows.count {
-            let stackPoint: CGPoint = if orientation == .h {
-                stackOrigin.addingYOffset(CGFloat(i - 1) * (stackHeight + gapV))
-            } else {
-                stackOrigin.addingXOffset(CGFloat(i - 1) * (stackWidth + gapH))
-            }
-            try await layoutWindow(windows[i], stackPoint, stackWidth, stackHeight, virtual, context)
+        let tiles = masterStackTiles(
+            width: width,
+            height: height,
+            gapH: gaps.horizontal,
+            gapV: gaps.vertical,
+            mfact: mfact,
+            orientation: orientation,
+            masterPosition: config.masterPosition,
+            count: windows.count,
+        )
+        for (window, tile) in zip(windows, tiles) {
+            let tilePoint = CGPoint(x: point.x + tile.topLeftX, y: point.y + tile.topLeftY)
+            try await layoutWindow(window, tilePoint, tile.width, tile.height, virtual, context)
         }
     }
 
