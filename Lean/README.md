@@ -8,6 +8,13 @@ them to C, which the `CDwmacCore` Swift target links (see `Sources/CDwmacCore`).
 | `DwmacCore/Split.lean` | Cut a length into `n` segments with gaps, in whole pixels | segments are disjoint and within the length |
 | `DwmacCore/MasterStack.lean` | Master-stack tiling | `masterStack_length`, `masterStack_pairwise_disjoint`, `masterStack_within` |
 | `DwmacCore/Ffi.lean` | `@[export]`ed C entry points | |
+| `DwmacCore/Model.lean` | The state machine: monitors, workspaces, windows, focus, scratchpads, and an `Op` per command or event | |
+| `DwmacCore/ModelProofs.lean` | Its invariant, preserved by every op | `reachable_inv`, `home_never_shown`, `scratchpad_topmost_or_hidden` |
+| `DwmacCore/ModelTest.lean` | Scenarios, checked with `#guard` at build time | |
+
+The model isn't wired into Swift yet: it's the spec the Swift code should match. It already settles two questions
+Swift answers differently: `move-node-to-workspace` refuses to move a window into a scratchpad home, or a scratchpad
+window out of one.
 
 The pipeline:
 
