@@ -54,7 +54,7 @@ struct LayoutCommand: Command {
 }
 
 extension Window {
-    fileprivate func matchesDescription(_ layout: LayoutCmdArgs.LayoutDescription) -> Bool {
+    @MainActor fileprivate func matchesDescription(_ layout: LayoutCmdArgs.LayoutDescription) -> Bool {
         guard let workspace = nodeWorkspace else { return false }
         return switch layout {
             case .horizontal:  !isFloating && workspace.orientation == .h

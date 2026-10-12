@@ -58,6 +58,14 @@ final class TestWindow: Window, CustomStringConvertible {
 
     override var isHiddenInCorner: Bool { hiddenInCorner }
 
+    @MainActor override func hideInCorner(_ corner: OptimalHideCorner, visible: Rect) async throws {
+        hiddenInCorner = true
+    }
+
+    @MainActor override func unhideFromCorner(monitor: Rect, restore: Bool) {
+        hiddenInCorner = false
+    }
+
     @MainActor override func forgetHiddenInCorner() {
         hiddenInCorner = false
     }

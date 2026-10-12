@@ -704,6 +704,22 @@ theorem configChanged_struct {s : State} (h : Struct s) (hf : s.focusWs.isHome =
       simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, not_and, Decidable.not_not] at hc
       exact hc hhome
 
+theorem mapWins_struct {s : State} (h : Struct s) (p : Win → Bool) (f : Win → Win) :
+    Struct { s with windows := s.mapWins p f } := by
+  have hf : ∀ w : Win, (if p w then { f w with id := w.id, app := w.app, ws := w.ws } else w).id = w.id ∧
+      (if p w then { f w with id := w.id, app := w.app, ws := w.ws } else w).ws = w.ws ∧
+      (if p w then { f w with id := w.id, app := w.app, ws := w.ws } else w).app = w.app :=
+    fun w => by split <;> exact ⟨rfl, rfl, rfl⟩
+  refine h.withWindows ⟨idsNodup_map (fun w => (hf w).1) h.windows.idsNodup, ?_⟩
+  simp only [State.mapWins, List.mem_map]
+  rintro _ ⟨w, hm, rfl⟩ hhome
+  rw [(hf w).2.1] at hhome ⊢
+  rw [(hf w).2.2]
+  exact h.windows.homesOwned w hm hhome
+
+theorem Struct.setProps {s : State} (h : Struct s) (ws : WsName) (p : WsProps) : Struct (s.setProps ws p) :=
+  h.congr rfl rfl rfl rfl
+
 theorem raw_struct {s : State} (hinv : Inv s) (op : Op) : Struct (s.raw op) := by
   have h := hinv.struct
   cases op with
@@ -728,6 +744,15 @@ theorem raw_struct {s : State} (hinv : Inv s) (op : Op) : Struct (s.raw op) := b
   | windowClosed id => exact windowClosed_struct h id
   | monitorsChanged mons forced => exact monitorsChanged_struct h mons forced
   | configChanged scratchpads forced => exact configChanged_struct h hinv.focusWs_not_home scratchpads forced
+  | setLayout ws layout orientation => exact h.setProps ..
+  | mfact ws change => exact h.setProps ..
+  | setFullscreen id on noOuterGaps =>
+    simp only [State.raw, State.setFullscreen]; split
+    · exact (mapWins_struct h _ _).congr rfl rfl rfl rfl
+    · exact h
+  | setParked id parked => exact mapWins_struct h _ _
+  | geometryChanged geometry => exact h.congr rfl rfl rfl rfl
+  | layoutConfigChanged cfg => exact h.congr rfl rfl rfl rfl
 
 /-! ## The theorems -/
 

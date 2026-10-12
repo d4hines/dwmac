@@ -161,7 +161,7 @@ extension String {
     }
 }
 
-private func toLayoutString(w: Workspace) -> String {
+@MainActor private func toLayoutString(w: Workspace) -> String {
     switch (w.layout, w.orientation) {
         case (.masterStack, .h): return LayoutCmdArgs.LayoutDescription.h_master_stack.rawValue
         case (.masterStack, .v): return LayoutCmdArgs.LayoutDescription.v_master_stack.rawValue
@@ -169,7 +169,7 @@ private func toLayoutString(w: Workspace) -> String {
     }
 }
 
-private func toLayoutResult(w: Window) -> Result<Primitive, String> {
+@MainActor private func toLayoutResult(w: Window) -> Result<Primitive, String> {
     guard let parent = w.parent else { return .failure("NULL-PARENT") }
     guard let workspace = w.nodeWorkspace else { return .failure("NULL-WORKSPACE") }
 

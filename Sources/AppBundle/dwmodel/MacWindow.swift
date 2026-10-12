@@ -112,10 +112,8 @@ final class MacWindow: Window {
         macApp.closeAndUnregisterAxWindow(windowId)
     }
 
-    // todo it's part of the window layout and should be moved to layoutRecursive.swift
     @MainActor
-    func hideInCorner(_ corner: OptimalHideCorner) async throws {
-        guard let nodeMonitor else { return }
+    override func hideInCorner(_ corner: OptimalHideCorner, visible: Rect) async throws {
         // Don't accidentally override prevUnhiddenEmulationPosition in case of subsequent
         // `hideEmulation` calls
         if !isHiddenInCorner {
@@ -133,36 +131,27 @@ final class MacWindow: Window {
                 // Zoom will jump off if you do one pixel offset https://github.com/hillyu/Dwmac/issues/527
                 // todo this ad hoc won't be necessary once I implement optimization suggested by Zalim
                 let onePixelOffset = macApp.appId == .zoom ? .zero : CGPoint(x: 1, y: -1)
-                p = nodeMonitor.visibleRect.bottomLeftCorner + onePixelOffset + CGPoint(x: -s.width, y: 0)
+                p = visible.bottomLeftCorner + onePixelOffset + CGPoint(x: -s.width, y: 0)
             case .bottomRightCorner:
                 // Zoom will jump off if you do one pixel offset https://github.com/hillyu/Dwmac/issues/527
                 // todo this ad hoc won't be necessary once I implement optimization suggested by Zalim
                 let onePixelOffset = macApp.appId == .zoom ? .zero : CGPoint(x: 1, y: 1)
-                p = nodeMonitor.visibleRect.bottomRightCorner - onePixelOffset
+                p = visible.bottomRightCorner - onePixelOffset
         }
         setAxFrame(p, nil)
     }
 
     @MainActor
-    func unhideFromCorner() {
+    override func unhideFromCorner(monitor: Rect, restore: Bool) {
         guard let prevUnhiddenProportionalPositionInsideWorkspaceRect else { return }
-        guard let nodeWorkspace else { return } // hiding only makes sense for workspace windows
-        guard let parent else { return }
-
-        switch getChildParentRelation(child: self, parent: parent) {
-            // Just a small optimization to avoid unnecessary AX calls for non floating windows
-            // Tiling windows should be unhidden with layoutRecursive anyway
-            case .floatingWindow:
-                let workspaceRect = nodeWorkspace.workspaceMonitor.rect
-                let pointInsideWorkspace = CGPoint(
-                    x: workspaceRect.width * prevUnhiddenProportionalPositionInsideWorkspaceRect.x,
-                    y: workspaceRect.height * prevUnhiddenProportionalPositionInsideWorkspaceRect.y,
-                )
-                setAxFrame(workspaceRect.topLeftCorner + pointInsideWorkspace, nil)
-            case .macosNativeFullscreenWindow, .macosNativeHiddenAppWindow, .macosNativeMinimizedWindow,
-                 .macosPopupWindow, .tiling, .shimContainerRelation: break
+        // Only floating windows are moved back: the layout places tiling ones
+        if restore {
+            let pointInsideWorkspace = CGPoint(
+                x: monitor.width * prevUnhiddenProportionalPositionInsideWorkspaceRect.x,
+                y: monitor.height * prevUnhiddenProportionalPositionInsideWorkspaceRect.y,
+            )
+            setAxFrame(monitor.topLeftCorner + pointInsideWorkspace, nil)
         }
-
         self.prevUnhiddenProportionalPositionInsideWorkspaceRect = nil
     }
 

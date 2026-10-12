@@ -11,15 +11,11 @@ final class Workspace: DwNode, NonLeafDwNodeObject, Hashable, Comparable {
     nonisolated private let nameLogicalSegments: StringLogicalSegments
     /// `assignedMonitorPoint` must be interpreted only when the workspace is invisible
     fileprivate var assignedMonitorPoint: CGPoint? = nil
-    var layout: Layout = .masterStack
-    var orientation: Orientation = .h
-    var mfact: CGFloat
 
     @MainActor
     private init(_ name: String) {
         self.name = name
         self.nameLogicalSegments = name.toLogicalSegments()
-        self.mfact = CGFloat(config.defaultMfact)
         super.init(parent: NilDwNode.instance, index: 0)
     }
 
@@ -71,6 +67,23 @@ final class Workspace: DwNode, NonLeafDwNodeObject, Hashable, Comparable {
     }
 
     nonisolated func hash(into hasher: inout Hasher) { hasher.combine(name) }
+}
+
+// Owned by Lean (Lean/DwmacCore/Model.lean): setting one is a request to Lean
+extension Workspace {
+    @MainActor var layout: Layout {
+        get { LeanState.last.props(name).layout }
+        set { leanApply(.setLayout(name, newValue, nil)) }
+    }
+    @MainActor var orientation: Orientation {
+        get { LeanState.last.props(name).orientation }
+        set { leanApply(.setLayout(name, nil, newValue)) }
+    }
+    /// Master's share of the main axis. Lean keeps it between 0.05 and 0.95
+    @MainActor var mfact: CGFloat {
+        get { CGFloat(LeanState.last.props(name).mfactPermille) / 1000 }
+        set { leanApply(.mfact(name, .set(permille: Int((newValue * 1000).rounded())))) }
+    }
 }
 
 extension Workspace {

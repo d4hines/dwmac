@@ -49,7 +49,7 @@ func placeSummonedScratchpad(_ windows: [Window], on workspace: Workspace, focus
     guard let scratchpad = windows.first.flatMap(scratchpadOwning) else { return }
     let primary = windows.first { $0.windowId == focused } ?? primaryWindow(windows)
     for window in windows where window != primary {
-        (window as? MacWindow)?.unhideFromCorner()
+        window.unhideFromCorner(monitor: workspace.workspaceMonitor.rect, restore: true)
     }
     if primary.isHiddenInCorner { primary.forgetHiddenInCorner() }
     let frame = summonedFrame(scratchpad, on: workspace)

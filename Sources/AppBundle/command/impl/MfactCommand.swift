@@ -11,16 +11,14 @@ struct MfactCommand: Command {
 
         if workspace.layout != .masterStack { return false }
 
-        switch args.amount.val {
-            case .set(let value): workspace.mfact = CGFloat(value)
-            case .add(let value): workspace.mfact += CGFloat(value)
-            case .subtract(let value): workspace.mfact -= CGFloat(value)
+        func permille(_ value: Double) -> Int { Int((value * 1000).rounded()) }
+        // Lean clamps it between 0.05 and 0.95
+        let change: LeanOp.MfactChange = switch args.amount.val {
+            case .set(let value): .set(permille: permille(value))
+            case .add(let value): .add(permille: permille(value))
+            case .subtract(let value): .sub(permille: permille(value))
         }
-
-        // Clamp
-        if workspace.mfact < 0.05 { workspace.mfact = 0.05 }
-        if workspace.mfact > 0.95 { workspace.mfact = 0.95 }
-
+        leanApply(.mfact(workspace.name, change))
         return true
     }
 }

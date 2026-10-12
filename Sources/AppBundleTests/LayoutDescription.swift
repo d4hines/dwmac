@@ -2,7 +2,7 @@
 import Common
 
 extension DwNode {
-    var layoutDescription: LayoutDescription {
+    @MainActor var layoutDescription: LayoutDescription {
         return switch nodeCases {
             case .window(let window): .window(window.windowId)
             case .workspace(let workspace):

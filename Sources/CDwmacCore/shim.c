@@ -11,11 +11,10 @@ void lean_initialize_thread(void);
 void lean_io_mark_end_initialization(void);
 void lean_io_result_show_error(lean_object *result);
 lean_object *initialize_DwmacCore_DwmacCore(uint8_t builtin);
-lean_object *dwmac_lean_master_stack(uint32_t w, uint32_t h, uint32_t gap_h, uint32_t gap_v, uint32_t mfact_permille,
-                                     uint8_t vertical, uint8_t master_at_stop, uint32_t n);
 lean_object *dwmac_lean_state_init(lean_object *scratchpads);
 lean_object *dwmac_lean_state_step(lean_object *state, lean_object *op);
 lean_object *dwmac_lean_state_snapshot(lean_object *state);
+lean_object *dwmac_lean_state_layout(lean_object *state, uint8_t show_all);
 
 static pthread_once_t runtime_once = PTHREAD_ONCE_INIT;
 static _Thread_local bool thread_ready = false;
@@ -42,23 +41,6 @@ static void ensure_ready(void) {
     }
 }
 
-static uint32_t read_u32_le(const uint8_t *p) {
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
-}
-
-size_t dwmac_master_stack(uint32_t w, uint32_t h, uint32_t gap_h, uint32_t gap_v, uint32_t mfact_permille,
-                          bool vertical, bool master_at_stop, uint32_t n, DwmacTile *out, size_t cap) {
-    ensure_ready();
-    lean_object *bytes = dwmac_lean_master_stack(w, h, gap_h, gap_v, mfact_permille, vertical, master_at_stop, n);
-    size_t count = lean_sarray_size(bytes) / 16;
-    const uint8_t *p = lean_sarray_cptr(bytes);
-    for (size_t i = 0; i < count && i < cap; i++, p += 16) {
-        out[i] = (DwmacTile){read_u32_le(p), read_u32_le(p + 4), read_u32_le(p + 8), read_u32_le(p + 12)};
-    }
-    lean_dec_ref(bytes);
-    return count;
-}
-
 // The window manager's state (Lean/DwmacCore/Model.lean). Only touched from the main thread
 static lean_object *state = NULL;
 
@@ -74,12 +56,22 @@ void dwmac_state_step(const char *op) {
     state = dwmac_lean_state_step(state, lean_mk_string(op)); // Both arguments are consumed
 }
 
+static char *take_string(lean_object *str) {
+    char *copy = strdup(lean_string_cstr(str));
+    lean_dec_ref(str);
+    return copy;
+}
+
 char *dwmac_state_snapshot(void) {
     ensure_ready();
     if (!state) dwmac_state_init("");
     lean_inc_ref(state); // Consumed
-    lean_object *str = dwmac_lean_state_snapshot(state);
-    char *copy = strdup(lean_string_cstr(str));
-    lean_dec_ref(str);
-    return copy;
+    return take_string(dwmac_lean_state_snapshot(state));
+}
+
+char *dwmac_state_layout(bool show_all) {
+    ensure_ready();
+    if (!state) dwmac_state_init("");
+    lean_inc_ref(state); // Consumed
+    return take_string(dwmac_lean_state_layout(state, show_all));
 }

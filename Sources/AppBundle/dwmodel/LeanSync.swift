@@ -15,7 +15,8 @@ import Common
 
 /// Stable Lean ids for monitors, by top left corner
 @MainActor private var monitorIdsByPoint: [CGPoint: Int] = [:]
-@MainActor private var lastEnvironment: (monitors: LeanOp, config: LeanOp)? = nil
+/// The environment ops last sent, so only changes are sent
+@MainActor private var lastEnvironment: [LeanOp] = []
 
 @MainActor func leanMonitorId(_ point: CGPoint) -> Int {
     if let id = monitorIdsByPoint[point] { return id }
@@ -39,16 +40,36 @@ import Common
 
 /// Send monitor and config changes, if any
 @MainActor private func leanSyncEnvironment() {
+    let monitors = monitors
     let mons = monitors.sorted { $0.isMain && !$1.isMain }.map { leanMonitorId($0.rect.topLeftCorner) }
     let forced = leanForcedAssignment()
-    let monitorsOp = LeanOp.monitorsChanged(monitors: mons, forced: forced)
-    let configOp = LeanOp.configChanged(
-        scratchpads: config.scratchpads.values.sorted { $0.name < $1.name }.map { ($0.name, $0.appId) },
-        forced: forced,
-    )
-    if lastEnvironment?.monitors != monitorsOp { LeanState.apply(monitorsOp) }
-    if lastEnvironment?.config != configOp { LeanState.apply(configOp) }
-    lastEnvironment = (monitorsOp, configOp)
+    let environment: [LeanOp] = [
+        .monitorsChanged(monitors: mons, forced: forced),
+        .configChanged(
+            scratchpads: config.scratchpads.values.sorted { $0.name < $1.name }.map { ($0.name, $0.appId) },
+            forced: forced,
+        ),
+        .geometryChanged(monitors.map { monitor in
+            let gaps = ResolvedGaps(gaps: config.gaps, monitor: monitor)
+            return (leanMonitorId(monitor.rect.topLeftCorner), LeanGeometry(
+                rect: monitor.rect,
+                visible: monitor.visibleRect,
+                padded: monitor.visibleRectPaddedByOuterGaps,
+                gapH: gaps.inner.horizontal,
+                gapV: gaps.inner.vertical,
+            ))
+        }),
+        .layoutConfigChanged(
+            defaultLayout: config.defaultRootContainerLayout,
+            defaultMfactPermille: Int((config.defaultMfact * 1000).rounded()),
+            masterAtStop: config.masterPosition == .right,
+            centerFloating: config.centerFloatingWindows,
+        ),
+    ]
+    for (index, op) in environment.enumerated() where lastEnvironment.getOrNil(atIndex: index) != op {
+        LeanState.apply(op)
+    }
+    lastEnvironment = environment
 }
 
 /// Apply `op` and make Swift's state match the result
@@ -70,7 +91,7 @@ func leanApply(_ op: LeanOp) -> LeanSnapshot {
 
 @MainActor func leanResetForTests() {
     monitorIdsByPoint = [:]
-    lastEnvironment = nil
+    lastEnvironment = []
     LeanState.reset(scratchpads: [])
     leanRefresh()
 }
@@ -92,11 +113,12 @@ func leanApply(_ op: LeanOp) -> LeanSnapshot {
         case let parent?:
             switch parent.cases {
                 case .macosFullscreenWindowsContainer, .macosHiddenAppsWindowsContainer:
-                    // Parked by macOS, but still part of its workspace
+                    // Parked by macOS: off the layout, but still part of its workspace
                     if !known, let workspace = parent.nodeWorkspace {
                         leanApply(.windowAppeared(id, appId: app, workspace: workspace.name, isFloating: window.isFloating,
                                                   index: Int(Int32.max)))
                     }
+                    if LeanState.last.window(id) != nil { leanApply(.setParked(id, true)) }
                 default:
                     // Popups aren't laid out. Minimized windows leave too, so Lean never focuses one; they come back as
                     // new windows when unminimized

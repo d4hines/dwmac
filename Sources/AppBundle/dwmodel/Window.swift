@@ -5,8 +5,6 @@ open class Window: DwNode, Hashable {
     nonisolated let windowId: UInt32 // todo nonisolated keyword is no longer necessary?
     let app: any AbstractApp
     var lastFloatingSize: CGSize?
-    var isFullscreen: Bool = false
-    var noOuterGapsInFullscreen: Bool = false
     var layoutReason: LayoutReason = .standard
     var isFloating: Bool = false {
         didSet {
@@ -16,7 +14,8 @@ open class Window: DwNode, Hashable {
             }
         }
     }
-    var lastLayoutMonitor: Monitor? = nil
+    /// The Lean monitor id the window was last laid out on, as a floating window
+    var lastLayoutMonitor: Int? = nil
 
     @MainActor
     init(id: UInt32, _ app: any AbstractApp, lastFloatingSize: CGSize?, parent: NonLeafDwNodeObject, index: Int) {
@@ -69,6 +68,12 @@ open class Window: DwNode, Hashable {
     @MainActor
     func nativeFocus() { die("Not implemented") }
     func getAxRect() async throws -> Rect? { die("Not implemented") }
+    /// Move the window off screen, into `corner` of `visible` (a monitor's visible rect)
+    @MainActor
+    func hideInCorner(_ corner: OptimalHideCorner, visible: Rect) async throws { die("Not implemented") }
+    /// Undo hideInCorner. `restore`: move it back where it was, relative to `monitor`
+    @MainActor
+    func unhideFromCorner(monitor: Rect, restore: Bool) { die("Not implemented") }
     func getCenter() async throws -> CGPoint? { try await getAxRect()?.center }
 
     func setAxFrameBlocking(_ topLeft: CGPoint?, _ size: CGSize?) async throws { die("Not implemented") }
@@ -82,6 +87,10 @@ enum LayoutReason: Equatable {
 }
 
 extension Window {
+    /// dwmac's `fullscreen` (Lean shows it fullscreen while it's its workspace's most recent window)
+    @MainActor var isFullscreen: Bool { LeanState.last.window(windowId)?.fullscreen != nil }
+    @MainActor var noOuterGapsInFullscreen: Bool { LeanState.last.window(windowId)?.fullscreen == true }
+
     @discardableResult
     @MainActor
     func bindAsFloatingWindow(to workspace: Workspace) -> BindingData? {

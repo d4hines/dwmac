@@ -15,6 +15,7 @@ final class WorkspaceLayoutTest: XCTestCase {
         )
 
         let workspace = Workspace.get(byName: "test")
+        XCTAssertTrue(mainMonitor.setActiveWorkspace(workspace)) // Lean only lays out shown workspaces
         workspace.layout = .masterStack
         workspace.orientation = .h
 
@@ -24,7 +25,7 @@ final class WorkspaceLayoutTest: XCTestCase {
         let w2 = TestWindow.new(id: 2, parent: workspace, rect: initialRect)
 
         // Layout
-        try await workspace.layoutWorkspace()
+        try await layoutWorkspaces()
 
         // Monitor is 1920x1080. Outer gaps 0.
         // Available width = 1920. Available height = 1080 (passed as 1079 in layoutWorkspace)
@@ -49,6 +50,7 @@ final class WorkspaceLayoutTest: XCTestCase {
             outer: .zero,
         )
         let workspace = Workspace.get(byName: "testV")
+        XCTAssertTrue(mainMonitor.setActiveWorkspace(workspace))
         workspace.layout = .masterStack
         workspace.orientation = .v
 
@@ -56,7 +58,7 @@ final class WorkspaceLayoutTest: XCTestCase {
         let w1 = TestWindow.new(id: 1, parent: workspace, rect: initialRect)
         let w2 = TestWindow.new(id: 2, parent: workspace, rect: initialRect)
 
-        try await workspace.layoutWorkspace()
+        try await layoutWorkspaces()
 
         // Tiles are whole points (Lean/DwmacCore/MasterStack.lean). Master Height = floor((1079 - 10) * 0.5) = 534
         // Master Width = 1920
@@ -79,6 +81,7 @@ final class WorkspaceLayoutTest: XCTestCase {
         defer { config.masterPosition = .left } // Reset after test
 
         let workspace = Workspace.get(byName: "testRightMaster")
+        XCTAssertTrue(mainMonitor.setActiveWorkspace(workspace))
         workspace.layout = .masterStack
         workspace.orientation = .h
 
@@ -86,7 +89,7 @@ final class WorkspaceLayoutTest: XCTestCase {
         let w1 = TestWindow.new(id: 1, parent: workspace, rect: initialRect)
         let w2 = TestWindow.new(id: 2, parent: workspace, rect: initialRect)
 
-        try await workspace.layoutWorkspace()
+        try await layoutWorkspaces()
 
         // Available width = 1920. Gaps = 10.
         // Master Width = 955. Stack Width = 955.

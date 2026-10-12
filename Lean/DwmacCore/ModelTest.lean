@@ -1,4 +1,4 @@
-import DwmacCore.Model
+import DwmacCore.Layout
 import DwmacCore.StateFfi
 
 /-! Scenarios, checked at build time -/
@@ -68,6 +68,43 @@ def wsOf (s : State) (id : WinId) : Option WsName := (s.window? id).map (·.ws)
   s.windows.map (·.id) == [2, 1]
 #guard (wsOf (run [.windowAppeared 1 "a" (.num 1) false 0, .placeWindow 1 (.home "kitty") 0 none]) 1) == some (.num 1)
 
+-- Master-stack tiles (ported from Swift's VerifiedLayoutTest): the remainder pixel goes to the first stack window
+def tiles (w h n : Nat) (o : Orientation := .h) (pos : MasterPosition := .start) : List Rect :=
+  masterStack { w, h, gapH := 10, gapV := 10, mfactPermille := 670, orientation := o, masterPosition := pos } n
+#guard tiles 1512 945 4 == [⟨0, 0, 1006, 945⟩, ⟨1016, 0, 496, 309⟩, ⟨1016, 319, 496, 308⟩, ⟨1016, 637, 496, 308⟩]
+#guard tiles 1512 945 2 (pos := .stop) == [⟨506, 0, 1006, 945⟩, ⟨0, 0, 496, 945⟩]
+#guard tiles 1000 600 3 (o := .v) == [⟨0, 0, 1000, 395⟩, ⟨0, 405, 495, 195⟩, ⟨505, 405, 495, 195⟩]
+#guard tiles 1512 945 0 == [] && tiles 1512 945 1 == [⟨0, 0, 1512, 945⟩]
+-- Gaps that don't fit are dropped: tiles still never leave the workspace
+#guard (tiles 100 100 50).length == 50 && (tiles 100 100 50).all fun r => r.x + r.w ≤ 100 && r.y + r.h ≤ 100
+
+-- Layout: one 1920x1080 monitor, 10pt gaps
+def geom : Geom := let r : IRect := ⟨0, 0, 1920, 1080⟩; ⟨r, r, r, 10, 10⟩
+def laidOut (ops : List Op) : List Effect := (run (.geometryChanged [(0, geom)] :: ops)).layout false
+
+-- Two windows side by side; kitty's hidden window and workspace 2's window go to the corner
+#guard
+  laidOut [.windowAppeared 1 "a" (.num 1) false 0, .windowAppeared 2 "b" (.num 1) false 9,
+    .windowAppeared 3 kitty.app (.num 1) false 0, .windowAppeared 4 "c" (.num 2) false 0] ==
+  [.unhide 1 geom.rect false, .unhide 2 geom.rect false, .tile 1 ⟨0, 0, 955, 1079⟩ geom.padded false,
+    .tile 2 ⟨965, 0, 955, 1079⟩ geom.padded false, .hide 3 .bottomRight geom.visible, .hide 4 .bottomRight geom.visible]
+
+-- Fullscreen covers the workspace while it's the most recent window; floating windows float; parked ones only unhide
+#guard
+  let fx := laidOut [.windowAppeared 1 "a" (.num 1) false 0, .windowAppeared 2 "b" (.num 1) false 9,
+    .setFullscreen 2 true false, .focusWindow 1]
+  fx.contains (.tile 1 ⟨0, 0, 955, 1079⟩ geom.padded false) && fx.contains (.tile 2 ⟨965, 0, 955, 1079⟩ geom.padded false)
+#guard (laidOut [.windowAppeared 1 "a" (.num 1) false 0, .windowAppeared 2 "b" (.num 1) false 9,
+    .setFullscreen 2 true false]).contains (.tile 2 geom.padded geom.padded true)
+#guard (laidOut [.windowAppeared 1 "a" (.num 1) true 0]) == [.unhide 1 geom.rect true, .float 1 0 geom.visible false]
+#guard (laidOut [.windowAppeared 1 "a" (.num 1) false 0, .setParked 1 true]) == [.unhide 1 geom.rect false]
+#guard (laidOut [.windowAppeared 1 "a" (.num 1) false 0, .setLayout (.num 1) (some .floating) none]) == [.unhide 1 geom.rect false]
+
+-- With a monitor to the right, windows hide in the bottom left corner instead
+#guard
+  let right : Geom := let r : IRect := ⟨1920, 0, 1920, 1080⟩; ⟨r, r, r, 0, 0⟩
+  (run [.geometryChanged [(0, geom), (1, right)]]).hideCorner geom == .bottomLeft
+
 -- Dropping a scratchpad from the config frees its windows
 #guard
   let s := run [.windowAppeared 2 kitty.app (.num 1) false 0, .configChanged [] []]
@@ -83,7 +120,12 @@ open State
   && WsName.parse "S" == .named "S"
 #guard
   let s := ["windowAppeared\t7\tcode\t1\t0\t0", "monitorsChanged\t0\x1e1\t5\x1f1"].foldl stateStepFfi (stateInitFfi "")
-  s.snapshot == "focus\t1\t7\nscreen\t0\t1\nscreen\t1\t2\nwindow\t7\t1\t0\nmru\t"
+  s.snapshot == "focus\t1\t7\nscreen\t0\t1\nscreen\t1\t2\nwindow\t7\t1\t0\t-\nmru\t\nwsdefault\tmaster-stack\th\t500"
+#guard
+  let s := ["geometryChanged\t0\x1f0,0,1920,1080\x1f0,25,1920,1055\x1f0,25,1920,1055\x1f10\x1f10",
+    "windowAppeared\t7\tcode\t1\t0\t0", "mfact\t1\tadd\t100", "setLayout\t1\t-\tv"].foldl stateStepFfi (stateInitFfi "")
+  stateLayoutFfi s 0 == "unhide\t7\t0,0,1920,1080\t0\ntile\t7\t0,25,1920,1054\t0,25,1920,1055\t0"
+    && (s.props (.num 1)).mfactPermille == 600 && (s.props (.num 1)).orientation == .v
 #guard (stateStepFfi (init []) "nonsense").snapshot == (init []).snapshot
 
 end DwmacCore.Model.Test

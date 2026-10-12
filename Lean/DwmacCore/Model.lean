@@ -1,3 +1,5 @@
+import DwmacCore.MasterStack
+
 /-!
 # The window manager's state machine
 
@@ -16,6 +18,9 @@ Every command and event is an `Op`. `step` applies one in three stages:
 `ModelProofs.lean` proves `step` preserves `Inv`, which includes the property the scratchpad fix was about: a
 scratchpad home is never shown, and a scratchpad window outside its home is on the focused workspace and its
 scratchpad has focus (so macOS keeps it on top).
+
+The state also holds what the layout needs (`Layout.lean` turns it into frames): each workspace's layout and mfact,
+fullscreen windows, and the monitors' geometry.
 -/
 
 namespace DwmacCore.Model
@@ -49,7 +54,56 @@ structure Win where
   app : AppId
   ws : WsName
   floating : Bool
+  /-- dwmac's `fullscreen` (not macOS's): `some noOuterGaps`. Shown fullscreen while it's its workspace's most
+  recent window -/
+  fullscreen : Option Bool := none
+  /-- macOS took it off the layout (native fullscreen, or its app is hidden). It still belongs to its workspace -/
+  parked : Bool := false
 deriving DecidableEq, Repr, Inhabited
+
+/-- A rect in global coordinates: (0, 0) is the main monitor's top left corner, y grows downwards -/
+structure IRect where
+  x : Int
+  y : Int
+  w : Nat
+  h : Nat
+deriving DecidableEq, Repr, Inhabited
+
+/-- A monitor's geometry, with the config's gaps resolved for it -/
+structure Geom where
+  rect : IRect
+  /-- Without the menu bar and the Dock -/
+  visible : IRect
+  /-- `visible` without the outer gaps: where windows are tiled -/
+  padded : IRect
+  gapH : Nat
+  gapV : Nat
+deriving DecidableEq, Repr, Inhabited
+
+inductive WsLayout where
+  | masterStack
+  | floating
+deriving DecidableEq, Repr, Inhabited
+
+structure WsProps where
+  layout : WsLayout
+  orientation : Orientation
+  mfactPermille : Nat
+deriving DecidableEq, Repr, Inhabited
+
+/-- Layout settings from the config -/
+structure LayoutCfg where
+  defaultLayout : WsLayout := .masterStack
+  defaultMfactPermille : Nat := 500
+  masterAtStop : Bool := false
+  centerFloating : Bool := false
+deriving DecidableEq, Repr, Inhabited
+
+inductive MfactChange where
+  | set (permille : Nat)
+  | add (permille : Nat)
+  | sub (permille : Nat)
+deriving DecidableEq, Repr
 
 structure Scratchpad where
   name : String
@@ -74,6 +128,10 @@ structure State where
   assigned : List (WsName × MonId)
   /-- Scratchpads launched by `toggleScratchpad`, and the workspace to summon their first window to -/
   pending : List (String × WsName)
+  /-- Workspaces whose layout differs from the config's default -/
+  wsProps : List (WsName × WsProps) := []
+  geometry : List (MonId × Geom) := []
+  layoutCfg : LayoutCfg := {}
 deriving Repr, Inhabited
 
 namespace State
@@ -87,6 +145,16 @@ def homeOf (s : State) (app : AppId) : Option WsName := (s.scratchpadOf app).map
 
 def window? (s : State) (id : WinId) : Option Win := s.windows.find? (·.id == id)
 def focusedApp (s : State) : Option AppId := s.focusWin.bind fun id => (s.window? id).map (·.app)
+
+def props (s : State) (ws : WsName) : WsProps :=
+  match s.wsProps.find? (·.1 == ws) with
+  | some p => p.2
+  | none => { layout := s.layoutCfg.defaultLayout, orientation := .h, mfactPermille := s.layoutCfg.defaultMfactPermille }
+
+def setProps (s : State) (ws : WsName) (p : WsProps) : State :=
+  { s with wsProps := (ws, p) :: s.wsProps.filter (·.1 != ws) }
+
+def geomOf (s : State) (mon : MonId) : Option Geom := (s.geometry.find? (·.1 == mon)).map (·.2)
 
 def monitorOf (s : State) (ws : WsName) : Option MonId := (s.screens.find? (·.2 == ws)).map (·.1)
 
@@ -208,6 +276,15 @@ inductive Op where
   /-- The connected monitors, main first, and the force assignment resolved against them -/
   | monitorsChanged (mons : List MonId) (forced : List (WsName × MonId))
   | configChanged (scratchpads : List Scratchpad) (forced : List (WsName × MonId))
+  /-- `layout`: change `ws`'s layout and/or orientation -/
+  | setLayout (ws : WsName) (layout : Option WsLayout) (orientation : Option Orientation)
+  | mfact (ws : WsName) (change : MfactChange)
+  /-- `fullscreen`. Makes the window its workspace's most recent, so it's the one shown fullscreen -/
+  | setFullscreen (id : WinId) (on : Bool) (noOuterGaps : Bool)
+  /-- macOS took the window off the layout (native fullscreen, hidden app), or gave it back -/
+  | setParked (id : WinId) (parked : Bool)
+  | geometryChanged (geometry : List (MonId × Geom))
+  | layoutConfigChanged (cfg : LayoutCfg)
 deriving Repr
 
 def focusWorkspace (s : State) (ws : WsName) : State :=
@@ -283,7 +360,7 @@ def placeWindow (s : State) (id : WinId) (ws : WsName) (index : Nat) (floating :
     if isScratchpad && w.ws != ws || ws.isHome && !isScratchpad then s
     else
       let floating := isScratchpad || floating.getD w.floating
-      { s with windows := insertInWs { w with ws, floating } (s.windows.filter (·.id != id)) index }
+      { s with windows := insertInWs { w with ws, floating, parked := false } (s.windows.filter (·.id != id)) index }
 
 def setFloating (s : State) (id : WinId) (floating : Bool) : State :=
   { s with windows := s.windows.map fun w =>
@@ -314,6 +391,24 @@ def configChanged (s : State) (scratchpads : List Scratchpad) (forced : List (Ws
   let s := { s with scratchpads }
   { s with windows := s.evictFromHomes }.monitorsChanged s.monitors forced
 
+/-- Change the windows matching `p`, keeping their id, app and workspace -/
+def mapWins (s : State) (p : Win → Bool) (f : Win → Win) : List Win :=
+  s.windows.map fun w => if p w then { f w with id := w.id, app := w.app, ws := w.ws } else w
+
+def mfact (s : State) (ws : WsName) (change : MfactChange) : State :=
+  let p := s.props ws
+  let m := match change with
+    | .set v => v
+    | .add v => p.mfactPermille + v
+    | .sub v => p.mfactPermille - v
+  s.setProps ws { p with mfactPermille := max 50 (min 950 m) }
+
+def setFullscreen (s : State) (id : WinId) (on noOuterGaps : Bool) : State :=
+  if s.windows.any (·.id == id) then
+    { s with windows := s.mapWins (·.id == id) ({ · with fullscreen := if on then some noOuterGaps else none }),
+             mru := id :: s.mru.erase id }
+  else s
+
 def raw (s : State) : Op → State
   | .focusWindow id => s.focusWindow id
   | .focusWorkspace ws => s.focusWorkspace ws
@@ -333,6 +428,14 @@ def raw (s : State) : Op → State
   | .windowClosed id => s.windowClosed id
   | .monitorsChanged mons forced => s.monitorsChanged mons forced
   | .configChanged scratchpads forced => s.configChanged scratchpads forced
+  | .setLayout ws layout orientation =>
+    let p := s.props ws
+    s.setProps ws { p with layout := layout.getD p.layout, orientation := orientation.getD p.orientation }
+  | .mfact ws change => s.mfact ws change
+  | .setFullscreen id on noOuterGaps => s.setFullscreen id on noOuterGaps
+  | .setParked id parked => { s with windows := s.mapWins (·.id == id) ({ · with parked }) }
+  | .geometryChanged geometry => { s with geometry }
+  | .layoutConfigChanged layoutCfg => { s with layoutCfg }
 
 /-! ## Normalization -/
 

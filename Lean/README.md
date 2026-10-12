@@ -1,29 +1,30 @@
-# DwmacCore: verified window manager algorithms
+# DwmacCore: the verified core of dwmac
 
-dwmac algorithms rewritten in Lean, with proofs of the properties the window manager relies on. Lean compiles
-them to C, which the `CDwmacCore` Swift target links (see `Sources/CDwmacCore`).
+dwmac's state and decisions live here, in Lean, with proofs of the properties the window manager relies on. Lean
+compiles them to C, which the `CDwmacCore` Swift target links (see `Sources/CDwmacCore`). Swift is the shell
+around it: it turns AX events and commands into `Op`s, and carries out the `Effect`s Lean computes with AX calls.
 
 | File | What | Theorems |
 |---|---|---|
 | `DwmacCore/Split.lean` | Cut a length into `n` segments with gaps, in whole pixels | segments are disjoint and within the length |
 | `DwmacCore/MasterStack.lean` | Master-stack tiling | `masterStack_length`, `masterStack_pairwise_disjoint`, `masterStack_within` |
-| `DwmacCore/Ffi.lean` | `@[export]`ed C entry points | |
-| `DwmacCore/Model.lean` | The state machine: monitors, workspaces, windows, focus, scratchpads, and an `Op` per command or event | |
+| `DwmacCore/Model.lean` | The state machine: monitors, workspaces, windows, focus, scratchpads, layout settings, and an `Op` per command or event | |
 | `DwmacCore/ModelProofs.lean` | Its invariant, preserved by every op | `reachable_inv`, `home_never_shown`, `scratchpad_topmost_or_hidden` |
+| `DwmacCore/Layout.lean` | The layout as effects: tile, float, hide in a corner, unhide | `layout_shows_visible`, `layout_never_shows_home` |
+| `DwmacCore/StateFfi.lean` | The text protocol and `@[export]`ed C entry points | |
 | `DwmacCore/ModelTest.lean` | Scenarios, checked with `#guard` at build time | |
-
-The model isn't wired into Swift yet: it's the spec the Swift code should match. It already settles two questions
-Swift answers differently: `move-node-to-workspace` refuses to move a window into a scratchpad home, or a scratchpad
-window out of one.
 
 The pipeline:
 
 ```
 Lean/DwmacCore/*.lean ──lake build──▶ .lake/build/ir/*.c ──copy-lean-c.sh──▶ Sources/CDwmacCore/generated/
                      (checks proofs)                                              │
-Sources/CDwmacCore/shim.c (runtime init, plain C API) ◀───────────────────────────┘
+Sources/CDwmacCore/shim.c (runtime init, holds the state) ◀────────────────────────┘
           ▲
-Sources/AppBundle/layout/VerifiedLayout.swift (Swift wrapper)
+Sources/AppBundle/dwmodel/LeanState.swift (ops, snapshots, effects)
+          ▲
+Sources/AppBundle/dwmodel/LeanSync.swift (Swift events → ops, snapshot → Swift's tree)
+Sources/AppBundle/layout/WorkspaceLayout.swift (effects → AX calls)
 ```
 
 ## Working on it
