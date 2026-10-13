@@ -81,8 +81,8 @@ private func dumpWindowDebugInfo(_ window: Window) async throws -> String {
     let windowLevelJson = windowLevel?.toJson() ?? .null
     result["Aero.windowLevel"] = windowLevelJson
     result["Aero.axWindowId"] = .uint32(window.windowId)
-    result["Aero.workspace"] = .stringOrNull(window.nodeWorkspace?.name)
-    result["Aero.treeNodeParent"] = .string(String(describing: window.parent))
+    result["Aero.workspace"] = .stringOrNull(window.workspace?.name)
+    result["Aero.lean"] = .string(window.lean.map { String(describing: $0) } ?? "unmanaged: \(String(describing: window.unmanaged))")
     result["Aero.macOS.version"] = .string(ProcessInfo().operatingSystemVersionString) // because built-in apps might behave differently depending on the OS version
     result["Aero.App.appBundleId"] = .stringOrNull(window.app.rawAppBundleId)
     result["Aero.App.pid"] = .int(Int(window.app.pid))

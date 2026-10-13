@@ -8,8 +8,7 @@ final class MoveCommandTest: XCTestCase {
 
     func testMoveFloating() async throws {
         let workspace = Workspace.get(byName: name)
-        let window = TestWindow.new(id: 1, parent: workspace, rect: Rect(topLeftX: 100, topLeftY: 100, width: 200, height: 200))
-        window.bindAsFloatingWindow(to: workspace)
+        let window = TestWindow.new(id: 1, parent: workspace, rect: Rect(topLeftX: 100, topLeftY: 100, width: 200, height: 200), floating: true)
         _ = window.focusWindow()
 
         // Move right

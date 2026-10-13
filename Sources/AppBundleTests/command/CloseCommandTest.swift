@@ -13,12 +13,12 @@ final class CloseCommandTest: XCTestCase {
         }
 
         assertEquals(focus.windowOrNil?.windowId, 1)
-        assertEquals(focus.workspace.children.count, 2)
+        assertEquals(focus.workspace.allWindows.count, 2)
 
         try await CloseCommand(args: CloseCmdArgs(rawArgs: [])).run(.defaultEnv, .emptyStdin)
 
         assertEquals(focus.windowOrNil?.windowId, 2)
-        assertEquals(focus.workspace.children.count, 1)
+        assertEquals(focus.workspace.allWindows.count, 1)
     }
 
     func testCloseViaWindowIdFlag() async throws {
@@ -28,11 +28,11 @@ final class CloseCommandTest: XCTestCase {
         }
 
         assertEquals(focus.windowOrNil?.windowId, 1)
-        assertEquals(focus.workspace.children.count, 2)
+        assertEquals(focus.workspace.allWindows.count, 2)
 
         try await CloseCommand(args: CloseCmdArgs(rawArgs: []).copy(\.windowId, 2)).run(.defaultEnv, .emptyStdin)
 
         assertEquals(focus.windowOrNil?.windowId, 1)
-        assertEquals(focus.workspace.children.count, 1)
+        assertEquals(focus.workspace.allWindows.count, 1)
     }
 }

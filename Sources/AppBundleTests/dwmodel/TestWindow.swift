@@ -7,17 +7,19 @@ final class TestWindow: Window, CustomStringConvertible {
     var frameHistory: [Rect] = []
     var hiddenInCorner = false
 
-    @MainActor
-    private init(_ id: UInt32, _ app: TestApp, _ parent: NonLeafDwNodeObject, _ rect: Rect?) {
+    private init(_ id: UInt32, _ app: TestApp, _ rect: Rect?) {
         _rect = rect
-        super.init(id: id, app, lastFloatingSize: nil, parent: parent, index: INDEX_BIND_LAST)
+        super.init(id: id, app, lastFloatingSize: nil)
     }
 
+    /// A new window, last in `parent`
     @discardableResult
     @MainActor
-    static func new(id: UInt32, parent: NonLeafDwNodeObject, rect: Rect? = nil, app: TestApp = .shared) -> TestWindow {
-        let wi = TestWindow(id, app, parent, rect)
+    static func new(id: UInt32, parent: Workspace, rect: Rect? = nil, app: TestApp = .shared, floating: Bool = false) -> TestWindow {
+        let wi = TestWindow(id, app, rect)
         app._windows.append(wi)
+        allWindowsMap[id] = wi
+        wi.manage(on: parent, floating: floating, index: Int(Int32.max))
         return wi
     }
 
@@ -30,7 +32,7 @@ final class TestWindow: Window, CustomStringConvertible {
     }
 
     override func closeAxWindow() {
-        unbindFromParent()
+        garbageCollect(skipClosedWindowsCache: true)
     }
 
     override var title: String {

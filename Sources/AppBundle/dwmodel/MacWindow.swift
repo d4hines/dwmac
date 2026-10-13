@@ -5,38 +5,33 @@ final class MacWindow: Window {
     let macApp: MacApp
     private var prevUnhiddenProportionalPositionInsideWorkspaceRect: CGPoint?
 
-    @MainActor
-    private init(_ id: UInt32, _ actor: MacApp, lastFloatingSize: CGSize?, parent: NonLeafDwNodeObject, index: Int) {
+    private init(_ id: UInt32, _ actor: MacApp, lastFloatingSize: CGSize?) {
         self.macApp = actor
-        super.init(id: id, actor, lastFloatingSize: lastFloatingSize, parent: parent, index: index)
+        super.init(id: id, actor, lastFloatingSize: lastFloatingSize)
     }
 
-    @MainActor static var allWindowsMap: [UInt32: MacWindow] = [:]
-    @MainActor static var allWindows: [MacWindow] { Array(allWindowsMap.values) }
+    @MainActor static var allWindows: [MacWindow] { Window.allWindowsMap.values.compactMap { $0 as? MacWindow } }
 
     @MainActor
     @discardableResult
     static func getOrRegister(windowId: UInt32, macApp: MacApp) async throws -> MacWindow {
-        if let existing = allWindowsMap[windowId] { return existing }
+        if let existing = allWindowsMap[windowId] as? MacWindow { return existing }
         let rect = try await macApp.getAxRect(windowId)
-        let (data, isFloating) = try await unbindAndGetBindingDataForNewWindow(
-            windowId,
-            macApp,
-            isStartup
-                ? (rect?.center.monitorApproximation ?? mainMonitor).activeWorkspace
-                : focus.workspace,
-            window: nil,
-        )
+        let type = try await macApp.getAxUiElementWindowType(windowId, getWindowLevel(for: windowId))
 
         // atomic synchronous section
-        if let existing = allWindowsMap[windowId] { return existing }
-        let window = MacWindow(windowId, macApp, lastFloatingSize: rect?.size, parent: data.parent, index: data.index)
-        window.isFloating = isFloating
+        if let existing = allWindowsMap[windowId] as? MacWindow { return existing }
+        let window = MacWindow(windowId, macApp, lastFloatingSize: rect?.size)
         allWindowsMap[windowId] = window
-        leanRefresh() // Lean got the window while it was being created, before Window.get could find it
+        let workspace = isStartup ? (rect?.center.monitorApproximation ?? mainMonitor).activeWorkspace : focus.workspace
+        switch type {
+            case .popup: window.unmanaged = .popup
+            // Lean puts scratchpad windows in their home, or summons them
+            case .dialog: window.manage(on: workspace, floating: true)
+            case .window: window.manage(on: workspace, floating: false)
+        }
 
         try await debugWindowsIfRecording(window)
-        // Lean put scratchpad windows in their home (or summoned them) when the window was bound above
         if try await !restoreClosedWindowsCacheIfNeeded(newlyDetectedWindow: window), scratchpadOwning(window) == nil {
             try await tryOnWindowDetected(window)
         }
@@ -66,36 +61,6 @@ final class MacWindow: Window {
 
     func setNativeMinimized(_ value: Bool) {
         macApp.setNativeMinimized(windowId, value)
-    }
-
-    // skipClosedWindowsCache is an optimization when it's definitely not necessary to cache closed window.
-    //                        If you are unsure, it's better to pass `false`
-    @MainActor
-    func garbageCollect(skipClosedWindowsCache: Bool) {
-        if MacWindow.allWindowsMap.removeValue(forKey: windowId) == nil {
-            return
-        }
-        if !skipClosedWindowsCache { cacheClosedWindowIfNeeded() }
-        let parent = unbindFromParent().parent
-        let deadWindowWorkspace = parent.nodeWorkspace
-        let focus = focus
-        if let deadWindowWorkspace, deadWindowWorkspace == focus.workspace ||
-            deadWindowWorkspace == prevFocusedWorkspace && prevFocusedWorkspaceDate.distance(to: .now) < 1
-        {
-            switch parent.cases {
-                case .workspace, .macosHiddenAppsWindowsContainer, .macosFullscreenWindowsContainer:
-                    let deadWindowFocus = deadWindowWorkspace.toLiveFocus()
-                    _ = setFocus(to: deadWindowFocus)
-                    // Guard against "Apple Reminders popup" bug: https://github.com/hillyu/Dwmac/issues/201
-                    if focus.windowOrNil?.app.pid != app.pid {
-                        // Force focus to fix macOS annoyance with focused apps without windows.
-                        //   https://github.com/hillyu/Dwmac/issues/65
-                        deadWindowFocus.windowOrNil?.nativeFocus()
-                    }
-                case .macosPopupWindowsContainer, .macosMinimizedWindowsContainer:
-                    break // Don't switch back on popup destruction
-            }
-        }
     }
 
     @MainActor override var title: String { get async throws { try await macApp.getAxTitle(windowId) ?? "" } }
@@ -185,54 +150,10 @@ final class MacWindow: Window {
     }
 }
 
-extension Window {
-    @MainActor
-    func relayoutWindow(on workspace: Workspace, forceTile: Bool = false) async throws {
-        let (data, isFloating) = forceTile
-            ? (unbindAndGetBindingDataForNewTilingWindow(workspace, window: self), false)
-            : try await unbindAndGetBindingDataForNewWindow(self.asMacWindow().windowId, self.asMacWindow().macApp, workspace, window: self)
-        bind(to: data.parent, index: data.index)
-        if !forceTile {
-            self.isFloating = isFloating
-        }
-    }
-}
-
-// The function is private because it's unsafe. It leaves the window in unbound state
-@MainActor
-private func unbindAndGetBindingDataForNewWindow(_ windowId: UInt32, _ macApp: MacApp, _ workspace: Workspace, window: Window?) async throws -> (BindingData, isFloating: Bool) {
-    let windowLevel = getWindowLevel(for: windowId)
-    switch try await macApp.getAxUiElementWindowType(windowId, windowLevel) {
-        case .popup: return (BindingData(parent: macosPopupWindowsContainer, index: INDEX_BIND_LAST), false)
-        case .dialog:
-            let bd = BindingData(parent: workspace, index: INDEX_BIND_LAST)
-            window?.isFloating = true
-            return (bd, true)
-        case .window: return (unbindAndGetBindingDataForNewTilingWindow(workspace, window: window), false)
-    }
-}
-
-// The function is private because it's unsafe. It leaves the window in unbound state
-@MainActor
-private func unbindAndGetBindingDataForNewTilingWindow(_ workspace: Workspace, window: Window?) -> BindingData {
-    window?.unbindFromParent()
-    window?.isFloating = false
-
-    return BindingData(
-        parent: workspace,
-        index: config.attachBelow ? INDEX_BIND_LAST : 0,
-    )
-}
-
 @MainActor
 func tryOnWindowDetected(_ window: Window) async throws {
-    guard let parent = window.parent else { return }
-    switch parent.cases {
-        case .workspace, .macosMinimizedWindowsContainer,
-             .macosFullscreenWindowsContainer, .macosHiddenAppsWindowsContainer:
-            try await onWindowDetected(window)
-        case .macosPopupWindowsContainer:
-            break
+    if window.unmanaged != .popup {
+        try await onWindowDetected(window)
     }
 }
 
@@ -261,7 +182,7 @@ extension WindowDetectedCallback {
         if let regex = matcher.appNameRegexSubstring, !(window.app.name ?? "").contains(regex) {
             return false
         }
-        if let workspace = matcher.workspace, workspace != window.nodeWorkspace?.name {
+        if let workspace = matcher.workspace, workspace != window.workspace?.name {
             return false
         }
         return true

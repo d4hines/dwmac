@@ -15,8 +15,6 @@ let projectRoot: URL = {
 
 @MainActor
 func setUpWorkspacesForTests() {
-    XCTAssertEqual(leanMismatchLog, [], "The previous test left Swift out of sync with Lean")
-    leanMismatchLog = []
     config = defaultConfig
     configUrl = defaultConfigUrl
     config.defaultRootContainerOrientation = .horizontal // Make default layout predictable
@@ -25,11 +23,7 @@ func setUpWorkspacesForTests() {
     config.modes = [mainModeId: Mode(name: nil, bindings: [:])]
     config.persistentWorkspaces = []
 
-    // Until none are left: Lean may move a window to a workspace already emptied (the config change above evicts
-    // scratchpad windows from their homes to the focused workspace)
-    while let child = Workspace.all.lazy.flatMap(\.children).first {
-        child.unbindFromParent()
-    }
+    Window.allWindowsMap = [:]
     leanResetForTests()
     check(Workspace.get(byName: "setUpWorkspacesForTests").focusWorkspace())
     Workspace.garbageCollectUnusedWorkspaces()

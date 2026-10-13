@@ -54,7 +54,7 @@ func placeSummonedScratchpad(_ windows: [Window], on workspace: Workspace, focus
 /// The window that was focused last. It gets the configured size; the rest keep their size
 @MainActor
 private func primaryWindow(_ windows: [Window]) -> Window {
-    windows.first { $0.parent?.mostRecentChild == $0 } ?? windows.last.orDie()
+    LeanState.last.mru.lazy.compactMap { id in windows.first { $0.windowId == id } }.first ?? windows.last.orDie()
 }
 
 /// The primary window's frame when summoned: sized per the config, centered on the workspace's monitor

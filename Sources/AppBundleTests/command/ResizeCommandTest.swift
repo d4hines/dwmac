@@ -29,8 +29,7 @@ final class ResizeCommandTest: XCTestCase {
     func testResizeFloating() async throws {
         setUpWorkspacesForTests()
         let workspace = Workspace.get(byName: "testResizeFloating")
-        let window = TestWindow.new(id: 1, parent: workspace, rect: Rect(topLeftX: 100, topLeftY: 100, width: 200, height: 200))
-        window.bindAsFloatingWindow(to: workspace)
+        let window = TestWindow.new(id: 1, parent: workspace, rect: Rect(topLeftX: 100, topLeftY: 100, width: 200, height: 200), floating: true)
         _ = window.focusWindow()
 
         // Resize width +50

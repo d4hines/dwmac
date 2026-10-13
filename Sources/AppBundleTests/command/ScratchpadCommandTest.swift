@@ -23,12 +23,12 @@ final class ScratchpadCommandTest: XCTestCase {
 
     func testDetectedWindowGoesHome() {
         let window = TestWindow.new(id: 1, parent: focus.workspace)
-        assertEquals(window.nodeWorkspace, scratchpad.home)
+        assertEquals(window.workspace, scratchpad.home)
         XCTAssertTrue(window.isFloating)
 
         // Other apps' windows are left alone
         let other = TestWindow.new(id: 2, parent: focus.workspace, app: .other)
-        assertEquals(other.nodeWorkspace, focus.workspace)
+        assertEquals(other.workspace, focus.workspace)
     }
 
     func testSummonFocusDismiss() async throws {
@@ -36,11 +36,10 @@ final class ScratchpadCommandTest: XCTestCase {
         let tiled = TestWindow.new(id: 1, parent: workspace, app: .other)
         _ = tiled.focusWindow()
         let window = TestWindow.new(id: 2, parent: workspace, rect: Rect(topLeftX: 0, topLeftY: 0, width: 10, height: 10))
-        window.bindAsFloatingWindow(to: scratchpad.home)
 
         // Summon: floats on the focused workspace, sized and centered, focused
         try await toggle()
-        assertEquals(window.nodeWorkspace, workspace)
+        assertEquals(window.workspace, workspace)
         XCTAssertTrue(window.isFloating)
         assertEquals(focus.windowOrNil, window)
         let monitorRect = workspace.workspaceMonitor.visibleRect
@@ -50,12 +49,12 @@ final class ScratchpadCommandTest: XCTestCase {
         // On the workspace but not focused: focus it
         _ = tiled.focusWindow()
         try await toggle()
-        assertEquals(window.nodeWorkspace, workspace)
+        assertEquals(window.workspace, workspace)
         assertEquals(focus.windowOrNil, window)
 
         // Focused: dismiss and give focus back to the workspace
         try await toggle()
-        assertEquals(window.nodeWorkspace, scratchpad.home)
+        assertEquals(window.workspace, scratchpad.home)
         assertEquals(focus.workspace, workspace)
         assertEquals(focus.windowOrNil, tiled)
     }
@@ -126,7 +125,6 @@ final class ScratchpadCommandTest: XCTestCase {
     private func summonHidden(_ hidden: Rect) async throws -> TestWindow {
         _ = TestWindow.new(id: 1, parent: focus.workspace, app: .other).focusWindow()
         let window = TestWindow.new(id: 2, parent: focus.workspace, rect: hidden)
-        window.bindAsFloatingWindow(to: scratchpad.home)
         window.hiddenInCorner = true
         try await toggle()
         return window

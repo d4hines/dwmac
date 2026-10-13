@@ -101,9 +101,9 @@ extension String {
             case (_, .none): break
 
             case (.window(let w, _), .workspace):
-                return w.nodeWorkspace.flatMap(AeroObj.workspace).map(expandFormatVar) ?? .success(.string("NULL-WOKRSPACE"))
+                return w.workspace.flatMap(AeroObj.workspace).map(expandFormatVar) ?? .success(.string("NULL-WOKRSPACE"))
             case (.window(let w, _), .monitor):
-                return w.nodeMonitor.flatMap(AeroObj.monitor).map(expandFormatVar) ?? .success(.string("NULL-MONITOR"))
+                return w.workspace.map(\.workspaceMonitor).flatMap(AeroObj.monitor).map(expandFormatVar) ?? .success(.string("NULL-MONITOR"))
             case (.window(let w, _), .app):
                 return expandFormatVar(obj: .app(w.app))
             case (.window(_, _), .window): break
@@ -170,21 +170,15 @@ extension String {
 }
 
 @MainActor private func toLayoutResult(w: Window) -> Result<Primitive, String> {
-    guard let parent = w.parent else { return .failure("NULL-PARENT") }
-    guard let workspace = w.nodeWorkspace else { return .failure("NULL-WORKSPACE") }
-
-    if w.isFloating {
-        return .success(.string(LayoutCmdArgs.LayoutDescription.floating.rawValue))
+    switch w.unmanaged {
+        case .popup?: return .success(.string("NULL-WINDOW-LAYOUT"))
+        case .minimized?: return .success(.string("macos_native_minimized"))
+        case nil: break
     }
-
-    return switch getChildParentRelation(child: w, parent: parent) {
-        case .tiling: .success(.string(toLayoutString(w: workspace)))
-        case .floatingWindow: .success(.string(LayoutCmdArgs.LayoutDescription.floating.rawValue))
-        case .macosNativeFullscreenWindow: .success(.string("macos_native_fullscreen"))
-        case .macosNativeHiddenAppWindow: .success(.string("macos_native_window_of_hidden_app"))
-        case .macosNativeMinimizedWindow: .success(.string("macos_native_minimized"))
-        case .macosPopupWindow: .success(.string("NULL-WINDOW-LAYOUT"))
-
-        case .shimContainerRelation: .failure("Window cannot have a shim container relation")
+    guard let workspace = w.workspace else { return .failure("NULL-WORKSPACE") }
+    if w.isParked {
+        let isHiddenApp = (w.app as? MacApp)?.nsApp.isHidden == true
+        return .success(.string(isHiddenApp ? "macos_native_window_of_hidden_app" : "macos_native_fullscreen"))
     }
+    return .success(.string(w.isFloating ? LayoutCmdArgs.LayoutDescription.floating.rawValue : toLayoutString(w: workspace)))
 }

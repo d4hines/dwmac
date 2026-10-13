@@ -279,6 +279,8 @@ struct LeanSnapshot: Equatable {
         let isFloating: Bool
         /// dwmac's `fullscreen`: whether it has no outer gaps
         var fullscreen: Bool? = nil
+        /// macOS took it off the layout (native fullscreen, or its app is hidden)
+        var parked: Bool = false
     }
     struct WsProps: Equatable {
         var layout: Layout = .masterStack
@@ -296,6 +298,8 @@ struct LeanSnapshot: Equatable {
     /// The focus before the last change
     var prevWorkspace: String? = nil
     var prevWindow: UInt32? = nil
+    /// The connected monitor each workspace was last shown on
+    var assigned: [String: Int] = [:]
     var defaultWsProps = WsProps()
     /// Workspaces whose layout differs from the default
     var wsProps: [String: WsProps] = [:]
@@ -309,16 +313,22 @@ struct LeanSnapshot: Equatable {
                     focusedWindow = UInt32(f[2])
                 case ("screen", 3):
                     if let mon = Int(f[1]) { screens.append(Screen(monitor: mon, workspace: f[2])) }
-                case ("window", 5):
+                case ("window", 6):
                     let fullscreen: Bool? = f[4] == "-" ? nil : f[4] == "1"
                     if let id = UInt32(f[1]) {
-                        windows.append(Win(id: id, workspace: f[2], isFloating: f[3] == "1", fullscreen: fullscreen))
+                        windows.append(Win(id: id, workspace: f[2], isFloating: f[3] == "1", fullscreen: fullscreen,
+                                           parked: f[5] == "1"))
                     }
                 case ("mru", 2):
                     mru = f[1].split(separator: ",").compactMap { UInt32($0) }
                 case ("prev", 3):
                     prevWorkspace = f[1] == "-" ? nil : f[1]
                     prevWindow = UInt32(f[2])
+                case ("assigned", 2):
+                    for item in f[1].split(separator: "\u{1e}") {
+                        let pair = item.split(separator: "\u{1f}", omittingEmptySubsequences: false)
+                        if pair.count == 2, let mon = Int(pair[1]) { assigned[String(pair[0])] = mon }
+                    }
                 case ("wsdefault", 4):
                     if let p = WsProps(f[1], f[2], f[3]) { defaultWsProps = p }
                 case ("ws", 5):
@@ -330,6 +340,13 @@ struct LeanSnapshot: Equatable {
 
     func workspace(onMonitor monitor: Int) -> String? { screens.first { $0.monitor == monitor }?.workspace }
     func window(_ id: UInt32) -> Win? { windows.first { $0.id == id } }
+    /// `workspace`'s windows, in tiling order
+    func windows(in workspace: String) -> [Win] { windows.filter { $0.workspace == workspace } }
+    /// The window of `workspace` to focus: the most recently focused one, else the first (Lean's `mruWin`)
+    func mruWindow(in workspace: String) -> UInt32? {
+        mru.first { window($0)?.workspace == workspace } ?? windows.first { $0.workspace == workspace }?.id
+    }
+    func monitor(showing workspace: String) -> Int? { screens.first { $0.workspace == workspace }?.monitor }
     func props(_ workspace: String) -> WsProps { wsProps[workspace] ?? defaultWsProps }
 }
 

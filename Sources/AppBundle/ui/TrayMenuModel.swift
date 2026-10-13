@@ -21,21 +21,21 @@ public final class TrayMenuModel: ObservableObject {
     TrayMenuModel.shared.trayText = (activeMode?.takeIf { $0 != mainModeId }?.first.map { "[\($0.uppercased())] " } ?? "") +
         sortedMonitors
         .map {
-            let hasFullscreenWindows = $0.activeWorkspace.allLeafWindowsRecursive.contains { $0.isFullscreen }
+            let hasFullscreenWindows = $0.activeWorkspace.allWindows.contains { $0.isFullscreen }
             let activeWorkspaceName = hasFullscreenWindows ? "(\($0.activeWorkspace.name))" : $0.activeWorkspace.name
             return ($0.activeWorkspace == focus.workspace && sortedMonitors.count > 1 ? "*" : "") + activeWorkspaceName
         }
         .joined(separator: " │ ")
     TrayMenuModel.shared.workspaces = Workspace.all.filter { !$0.isScratchpadHome }.map {
-        let apps = $0.allLeafWindowsRecursive.map { $0.app.name?.takeIf { !$0.isEmpty } }.filterNotNil().toSet()
-        let appBundleIds = $0.allLeafWindowsRecursive.map { $0.app.rawAppBundleId }.filterNotNil().toSet()
+        let apps = $0.allWindows.map { $0.app.name?.takeIf { !$0.isEmpty } }.filterNotNil().toSet()
+        let appBundleIds = $0.allWindows.map { $0.app.rawAppBundleId }.filterNotNil().toSet()
         let dash = " - "
         let suffix = switch true {
             case !apps.isEmpty: dash + apps.sorted().joinTruncating(separator: ", ", length: 25)
             case $0.isVisible: dash + $0.workspaceMonitor.name
             default: ""
         }
-        let hasFullscreenWindows = $0.allLeafWindowsRecursive.contains { $0.isFullscreen }
+        let hasFullscreenWindows = $0.allWindows.contains { $0.isFullscreen }
         return WorkspaceViewModel(
             name: $0.name,
             suffix: suffix,
@@ -47,7 +47,7 @@ public final class TrayMenuModel: ObservableObject {
         )
     }
     var items = sortedMonitors.map {
-        let hasFullscreenWindows = $0.activeWorkspace.allLeafWindowsRecursive.contains { $0.isFullscreen }
+        let hasFullscreenWindows = $0.activeWorkspace.allWindows.contains { $0.isFullscreen }
         return TrayItem(
             type: .workspace,
             name: $0.activeWorkspace.name,

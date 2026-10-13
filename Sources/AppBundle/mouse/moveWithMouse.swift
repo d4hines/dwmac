@@ -36,9 +36,9 @@ private func moveWithMouse(_ window: Window) async throws { // todo cover with t
 @MainActor
 private func moveFloatingWindow(_ window: Window) async throws {
     guard let targetWorkspace = try await window.getCenter()?.monitorApproximation.activeWorkspace else { return }
-    guard let parent = window.parent else { return }
-    if targetWorkspace != parent {
-        window.bindAsFloatingWindow(to: targetWorkspace)
+    guard let workspace = window.workspace else { return }
+    if targetWorkspace != workspace {
+        leanApply(.placeWindow(window.windowId, workspace: targetWorkspace.name, index: Int(Int32.max), isFloating: true))
     }
 }
 
@@ -52,7 +52,7 @@ private func moveTilingWindow(_ window: Window) {
     // Find window under cursor in target workspace
     let swapTarget = mouseLocation.findIn(workspace: targetWorkspace, virtual: false)?.takeIf { $0 != window }
 
-    if targetWorkspace != window.nodeWorkspace { // Move window to a different monitor
+    if targetWorkspace != window.workspace { // Move window to a different monitor
         // Calculate insertion index
         let index: Int
         if let swapTarget {
@@ -73,11 +73,7 @@ private func moveTilingWindow(_ window: Window) {
         } else {
             index = 0
         }
-        window.bind(
-            to: targetWorkspace,
-            index: index, // This index is in `children`, which mixes types. Might be buggy if not careful.
-            // But bind() inserts at index.
-        )
+        leanApply(.placeWindow(window.windowId, workspace: targetWorkspace.name, index: index, isFloating: nil))
     } else if let swapTarget {
         swapWindows(window, swapTarget)
     }
@@ -86,16 +82,18 @@ private func moveTilingWindow(_ window: Window) {
 @MainActor
 func swapWindows(_ window1: Window, _ window2: Window) {
     if window1 == window2 { return }
-    guard let parent1 = window1.parent, let index1 = window1.ownIndex else { return }
-    guard let parent2 = window2.parent, let index2 = window2.ownIndex else { return }
-    // Move with bind only: unbinding a window tells Lean it closed
-    if parent1 === parent2 {
+    guard let ws1 = window1.lean?.workspace, let index1 = window1.ownIndex else { return }
+    guard let ws2 = window2.lean?.workspace, let index2 = window2.ownIndex else { return }
+    func place(_ window: Window, _ workspace: String, _ index: Int) {
+        leanApply(.placeWindow(window.windowId, workspace: workspace, index: index, isFloating: nil))
+    }
+    if ws1 == ws2 {
         let (first, second) = index1 < index2 ? (window1, window2) : (window2, window1)
-        second.bind(to: parent1, index: min(index1, index2))
-        first.bind(to: parent1, index: max(index1, index2))
+        place(second, ws1, min(index1, index2))
+        place(first, ws1, max(index1, index2))
     } else {
-        window2.bind(to: parent1, index: index1)
-        window1.bind(to: parent2, index: index2)
+        place(window2, ws1, index1)
+        place(window1, ws2, index2)
     }
 }
 

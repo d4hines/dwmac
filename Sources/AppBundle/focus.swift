@@ -49,16 +49,23 @@ struct FrozenFocus: AeroAny, Equatable, Sendable {
     }
 }
 
-@MainActor private var _focus: FrozenFocus = {
-    let monitor = mainMonitor
-    return FrozenFocus(windowId: nil, workspaceName: monitor.activeWorkspace.name, monitorId: monitor.monitorId ?? 0)
-}()
-
-/// Global focus.
+/// Global focus: Lean's.
 /// Commands must be cautious about accessing this property directly. There are legitimate cases.
 /// But, in general, commands must firstly check --window-id, --workspace, DWMAC_WINDOW_ID env and
 /// DWMAC_WORKSPACE env before accessing the global focus.
-@MainActor var focus: LiveFocus { _focus.live }
+@MainActor var focus: LiveFocus { leanFocus.live }
+
+@MainActor private var leanFocus: FrozenFocus {
+    let snapshot = LeanState.last
+    let workspace = snapshot.focusedWorkspace.isEmpty
+        ? mainMonitor.activeWorkspace // Before Lean has heard of the monitors
+        : Workspace.get(byName: snapshot.focusedWorkspace)
+    return FrozenFocus(
+        windowId: snapshot.focusedWindow,
+        workspaceName: workspace.name,
+        monitorId: workspace.workspaceMonitor.monitorId ?? 0,
+    )
+}
 
 /// Ask Lean to focus `newFocus`. Returns whether it did. Focusing a hidden scratchpad window summons it onto the
 /// focused workspace instead (Cmd-Tab, the Dock, `focus --window-id`); Lean never shows a scratchpad home
@@ -68,16 +75,6 @@ struct FrozenFocus: AeroAny, Equatable, Sendable {
     } else {
         return leanApply(.focusWorkspace(newFocus.workspace.name)).focusedWorkspace == newFocus.workspace.name
     }
-}
-
-/// Make the focus match Lean's
-@MainActor func projectLeanFocus(_ snapshot: LeanSnapshot) {
-    let workspace = Workspace.get(byName: snapshot.focusedWorkspace)
-    _focus = FrozenFocus(
-        windowId: snapshot.focusedWindow,
-        workspaceName: workspace.name,
-        monitorId: workspace.workspaceMonitor.monitorId ?? 0,
-    )
 }
 
 extension Window {
@@ -91,23 +88,16 @@ extension Window {
         }
     }
 
-    @MainActor func toLiveFocusOrNil() -> LiveFocus? { visualWorkspace.map { LiveFocus(windowOrNil: self, workspace: $0) } }
+    /// nil for the windows Lean doesn't manage
+    @MainActor func toLiveFocusOrNil() -> LiveFocus? { workspace.map { LiveFocus(windowOrNil: self, workspace: $0) } }
 }
 extension Workspace {
     @MainActor func focusWorkspace() -> Bool { setFocus(to: toLiveFocus()) }
 
-    func toLiveFocus() -> LiveFocus {
-        // todo unfortunately mostRecentWindowRecursive may recursively reach empty rootTilingContainer
-        //      while floating or macos unconventional windows might be presented
-        if let wd = mostRecentWindowRecursive ?? anyLeafWindowRecursive {
-            LiveFocus(windowOrNil: wd, workspace: self)
-        } else {
-            LiveFocus(windowOrNil: nil, workspace: self) // emptyWorkspace
-        }
-    }
+    @MainActor func toLiveFocus() -> LiveFocus { LiveFocus(windowOrNil: mostRecentWindow, workspace: self) }
 }
 
-@MainActor private var _lastKnownFocus: FrozenFocus = _focus
+@MainActor private var lastKnownFocus: FrozenFocus? = nil
 
 // Used by workspace-back-and-forth
 @MainActor var _prevFocusedWorkspaceName: String? = nil {
@@ -134,20 +124,21 @@ extension Workspace {
     }
     let focus = focus
     let frozenFocus = focus.frozen
+    let last = lastKnownFocus ?? frozenFocus
     var hasFocusChanged = false
     var hasFocusedWorkspaceChanged = false
     var hasFocusedMonitorChanged = false
-    if frozenFocus != _lastKnownFocus {
+    if frozenFocus != last {
         hasFocusChanged = true
     }
-    if frozenFocus.workspaceName != _lastKnownFocus.workspaceName {
-        _prevFocusedWorkspaceName = _lastKnownFocus.workspaceName
+    if frozenFocus.workspaceName != last.workspaceName {
+        _prevFocusedWorkspaceName = last.workspaceName
         hasFocusedWorkspaceChanged = true
     }
-    if frozenFocus.monitorId != _lastKnownFocus.monitorId {
+    if frozenFocus.monitorId != last.monitorId {
         hasFocusedMonitorChanged = true
     }
-    _lastKnownFocus = frozenFocus
+    lastKnownFocus = frozenFocus
 
     if onFocusChangedRecursionGuard { return }
     onFocusChangedRecursionGuard = true

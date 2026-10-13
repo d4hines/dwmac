@@ -26,7 +26,8 @@ Sources/CDwmacCore/shim.c (runtime init, holds the state) ◀──────�
           ▲
 Sources/AppBundle/dwmodel/LeanState.swift (ops, commands, replies, snapshots, effects)
           ▲
-Sources/AppBundle/dwmodel/LeanSync.swift (Swift events → ops, snapshot → Swift's tree)
+Sources/AppBundle/dwmodel/LeanSync.swift (config and monitor changes → ops)
+Sources/AppBundle/dwmodel/{Window,Workspace}.swift, normalizeLayoutReason.swift (snapshot queries; AX events → ops)
 Sources/AppBundle/command/impl/*.swift (parse arguments → `leanRun`)
 Sources/AppBundle/layout/WorkspaceLayout.swift (effects → AX calls)
 ```

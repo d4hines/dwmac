@@ -32,7 +32,7 @@ struct ListWindowsCommand: Command {
                 if monitors.isEmpty { return false }
                 workspaces = workspaces.filter { monitors.contains($0.workspaceMonitor.rect.topLeftCorner) }
             }
-            windows = workspaces.flatMap(\.allLeafWindowsRecursive)
+            windows = workspaces.flatMap(\.allWindows)
             if let pid = args.filteringOptions.pidFilter {
                 windows = windows.filter { $0.app.pid == pid }
             }
@@ -48,7 +48,7 @@ struct ListWindowsCommand: Command {
             for window in windows {
                 _list.append((window, try await window.title))
             }
-            _list = _list.filter { $0.window.isBound }
+            _list = _list.filter { Window.get(byId: $0.window.windowId) != nil }
             _list = _list.sortedBy([{ $0.window.app.name ?? "" }, \.title])
 
             let list = _list.map { AeroObj.window(window: $0.window, title: $0.title) }

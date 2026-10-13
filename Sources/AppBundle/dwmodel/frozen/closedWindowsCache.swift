@@ -1,10 +1,17 @@
 import AppKit
 import Common
 
-/// First line of defence against lock screen
+/// First line of defence against lock screen: the layout from before windows started closing, to put them back
+/// when they reappear with the same ids
 @MainActor private var closedWindowsCache = FrozenWorld(workspaces: [], monitors: [], windowIds: [])
 
-struct FrozenMonitor: Sendable {
+private struct FrozenWorld {
+    let workspaces: [FrozenWorkspace]
+    let monitors: [FrozenMonitor]
+    let windowIds: Set<UInt32>
+}
+
+private struct FrozenMonitor {
     let topLeftCorner: CGPoint
     let visibleWorkspace: String
 
@@ -14,32 +21,30 @@ struct FrozenMonitor: Sendable {
     }
 }
 
-struct FrozenWorkspace: Sendable {
+private struct FrozenWorkspace {
     let name: String
     let monitor: FrozenMonitor
-    let rootTilingNode: FrozenContainer // Represents Workspace state
-    let floatingWindows: [FrozenWindow]
-    let macosUnconventionalWindows: [FrozenWindow]
+    let layout: Layout
+    let orientation: Orientation
+    /// In tiling order
+    let windows: [(id: UInt32, isFloating: Bool)]
 
     @MainActor init(_ workspace: Workspace) {
         name = workspace.name
         monitor = FrozenMonitor(workspace.workspaceMonitor)
-        rootTilingNode = FrozenContainer(workspace)
-        floatingWindows = workspace.floatingWindows.map(FrozenWindow.init)
-        macosUnconventionalWindows =
-            workspace.macOsNativeHiddenAppsWindowsContainer.children.map { FrozenWindow($0 as! Window) } +
-            workspace.macOsNativeFullscreenWindowsContainer.children.map { FrozenWindow($0 as! Window) }
+        layout = workspace.layout
+        orientation = workspace.orientation
+        windows = LeanState.last.windows(in: workspace.name).map { ($0.id, $0.isFloating) }
     }
 }
 
 @MainActor func cacheClosedWindowIfNeeded() {
-    let allWs = Workspace.all
-    let allWindowIds = allWs.flatMap { collectAllWindowIds(workspace: $0) }.toSet()
+    let allWindowIds = LeanState.last.windows.map(\.id).toSet()
     if allWindowIds.isSubset(of: closedWindowsCache.windowIds) {
         return // already cached
     }
     closedWindowsCache = FrozenWorld(
-        workspaces: allWs.map { FrozenWorkspace($0) },
+        workspaces: Workspace.all.map { FrozenWorkspace($0) },
         monitors: monitors.map(FrozenMonitor.init),
         windowIds: allWindowIds,
     )
@@ -49,7 +54,6 @@ struct FrozenWorkspace: Sendable {
     if !closedWindowsCache.windowIds.contains(newlyDetectedWindow.windowId) {
         return false
     }
-    let monitors = monitors
     let topLeftCornerToMonitor = monitors.grouped { $0.rect.topLeftCorner }
 
     for frozenWorkspace in closedWindowsCache.workspaces {
@@ -57,37 +61,10 @@ struct FrozenWorkspace: Sendable {
         _ = topLeftCornerToMonitor[frozenWorkspace.monitor.topLeftCorner]?
             .singleOrNil()?
             .setActiveWorkspace(workspace)
-        for frozenWindow in frozenWorkspace.floatingWindows {
-            MacWindow.get(byId: frozenWindow.id)?.bindAsFloatingWindow(to: workspace)
-        }
-        for frozenWindow in frozenWorkspace.macosUnconventionalWindows {
-            MacWindow.get(byId: frozenWindow.id)?.bindAsFloatingWindow(to: workspace)
-        }
-
-        let potentialOrphans = workspace.tilingWindows
-
-        // Restore layout properties
-        workspace.layout = frozenWorkspace.rootTilingNode.layout
-        workspace.orientation = frozenWorkspace.rootTilingNode.orientation
-
-        // Restore Tiling Windows
-        for (index, child) in frozenWorkspace.rootTilingNode.children.enumerated() {
-            switch child {
-                case .window(let w):
-                    guard let window = MacWindow.get(byId: w.id) else { continue }
-                    window.bind(to: workspace, index: index)
-                case .container:
-                    die("Containers not supported in restoration")
-            }
-        }
-
-        // Relayout orphans (windows that were tiling but not in cache? or vice versa?)
-        // If bind happened above, they are already in correct place.
-        // We just need to check if any were left out.
-        let newTiling = workspace.tilingWindows.map { $0.windowId }.toSet()
-
-        for orphan in potentialOrphans.filter({ !newTiling.contains($0.windowId) }) {
-            try await orphan.relayoutWindow(on: workspace, forceTile: true)
+        workspace.layout = frozenWorkspace.layout
+        workspace.orientation = frozenWorkspace.orientation
+        for (index, window) in frozenWorkspace.windows.enumerated() where Window.get(byId: window.id) != nil {
+            leanApply(.placeWindow(window.id, workspace: workspace.name, index: index, isFloating: window.isFloating))
         }
     }
 

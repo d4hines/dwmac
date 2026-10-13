@@ -213,22 +213,26 @@ def WsProps.render (p : WsProps) : String := s!"{p.layout.render}\t{p.orientatio
 
 /-- One record per line, fields separated by tabs:
 `focus <ws> <window id or ->`, then `screen <monitor> <ws>` per monitor (main first), then
-`window <id> <ws> <floating 0/1> <fullscreen: -, or no outer gaps 0/1>` per window in tiling order, then
-`mru <ids, most recent first, comma separated>`, `prev <ws or -> <window id or ->` (the focus before the last change),
-then `wsdefault <layout> <orientation> <mfact permille>` and
+`window <id> <ws> <floating 0/1> <fullscreen: -, or no outer gaps 0/1> <parked 0/1>` per window in tiling order,
+then `mru <ids, most recent first, comma separated>`, `prev <ws or -> <window id or ->` (the focus before the last
+change), `assigned <ws\x1fmonitor items>` (the connected monitor each workspace was last shown on), then
+`wsdefault <layout> <orientation> <mfact permille>` and
 `ws <name> <layout> <orientation> <mfact permille>` per workspace that differs from it -/
 def State.snapshot (s : State) : String :=
   let focus := s!"focus\t{s.focusWs.render}\t{(s.focusWin.map toString).getD "-"}"
   let screens := s.screens.map fun (m, ws) => s!"screen\t{m}\t{ws.render}"
   let windows := s.windows.map fun w =>
-    s!"window\t{w.id}\t{w.ws.render}\t{b w.floating}\t{(w.fullscreen.map b).getD "-"}"
+    s!"window\t{w.id}\t{w.ws.render}\t{b w.floating}\t{(w.fullscreen.map b).getD "-"}\t{b w.parked}"
   let mru := s!"mru\t{",".intercalate (s.mru.map toString)}"
   let prev := match s.prevFocus with
     | some (ws, win) => s!"prev\t{ws.render}\t{(win.map toString).getD "-"}"
     | none => "prev\t-\t-"
+  let lastShown := s.assigned.foldl (fun acc (ws, m) =>
+    if s.monitors.contains m && !acc.any (·.1 == ws) then acc ++ [(ws, m)] else acc) []
+  let assigned := s!"assigned\t{"\x1e".intercalate (lastShown.map fun (ws, m) => s!"{ws.render}\x1f{m}")}"
   let wsDefault := s!"wsdefault\t{(s.props (.named "")).render}"
   let wsProps := s.wsProps.map fun (ws, p) => s!"ws\t{ws.render}\t{p.render}"
-  "\n".intercalate (focus :: screens ++ windows ++ [mru, prev, wsDefault] ++ wsProps)
+  "\n".intercalate (focus :: screens ++ windows ++ [mru, prev, assigned, wsDefault] ++ wsProps)
 
 def Corner.render : Corner → String
   | .bottomLeft => "bottom-left"

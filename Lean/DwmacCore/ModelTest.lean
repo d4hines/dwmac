@@ -120,7 +120,7 @@ open State
 def runText (inputs : List String) : State := inputs.foldl (fun s i => (s.execText i).1) (stateInitFfi "")
 #guard
   let s := runText ["windowAppeared\t7\tcode\t1\t0\t0", "monitorsChanged\t0\x1e1\t5\x1f1"]
-  s.snapshot == "focus\t1\t7\nscreen\t0\t1\nscreen\t1\t2\nwindow\t7\t1\t0\t-\nmru\t\nprev\t1\t-\nwsdefault\tmaster-stack\th\t500"
+  s.snapshot == "focus\t1\t7\nscreen\t0\t1\nscreen\t1\t2\nwindow\t7\t1\t0\t-\t0\nmru\t\nprev\t1\t-\nassigned\t2\x1f1\x1e1\x1f0\nwsdefault\tmaster-stack\th\t500"
 #guard
   let s := runText ["geometryChanged\t0\x1f0,0,1920,1080\x1f0,25,1920,1055\x1f0,25,1920,1055\x1f10\x1f10\x1fBuilt-in",
     "windowAppeared\t7\tcode\t1\t0\t0", "mfact\t1\tadd\t100", "setLayout\t1\t-\tv"]

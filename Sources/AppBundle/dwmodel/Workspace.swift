@@ -3,24 +3,24 @@ import Common
 
 @MainActor private var workspaceNameToWorkspace: [String: Workspace] = [:]
 
-@MainActor private var screenPointToVisibleWorkspace: [CGPoint: Workspace] = [:]
-@MainActor private var visibleWorkspaceToScreenPoint: [Workspace: CGPoint] = [:]
-
-final class Workspace: DwNode, NonLeafDwNodeObject, Hashable, Comparable {
+/// A workspace, by name. Lean owns what's in it, its layout, and the monitor it's shown on
+/// (Lean/DwmacCore/Model.lean); these read and request those
+final class Workspace: Hashable, Comparable, AeroAny {
     let name: String
     nonisolated private let nameLogicalSegments: StringLogicalSegments
-    /// `assignedMonitorPoint` must be interpreted only when the workspace is invisible
-    fileprivate var assignedMonitorPoint: CGPoint? = nil
 
-    @MainActor
     private init(_ name: String) {
         self.name = name
         self.nameLogicalSegments = name.toLogicalSegments()
-        super.init(parent: NilDwNode.instance, index: 0)
     }
 
+    /// The workspaces with windows, the shown ones, and the ones asked for by name since the last garbage collection
     @MainActor static var all: [Workspace] {
-        workspaceNameToWorkspace.values.sorted()
+        let snapshot = LeanState.last
+        for name in snapshot.windows.map(\.workspace) + snapshot.screens.map(\.workspace) {
+            _ = get(byName: name)
+        }
+        return workspaceNameToWorkspace.values.sorted()
     }
 
     @MainActor static func get(byName name: String) -> Workspace {
@@ -61,10 +61,7 @@ final class Workspace: DwNode, NonLeafDwNodeObject, Hashable, Comparable {
         }
     }
 
-    nonisolated static func == (lhs: Workspace, rhs: Workspace) -> Bool {
-        check((lhs === rhs) == (lhs.name == rhs.name), "lhs: \(lhs) rhs: \(rhs)")
-        return lhs === rhs
-    }
+    nonisolated static func == (lhs: Workspace, rhs: Workspace) -> Bool { lhs.name == rhs.name }
 
     nonisolated func hash(into hasher: inout Hasher) { hasher.combine(name) }
 }
@@ -87,62 +84,64 @@ extension Workspace {
 }
 
 extension Workspace {
+    /// In tiling order, parked ones included
+    @MainActor var allWindows: [Window] { LeanState.last.windows(in: name).compactMap { Window.get(byId: $0.id) } }
+    @MainActor var tilingWindows: [Window] { allWindows.filter { !$0.isFloating && !$0.isParked } }
+    @MainActor var floatingWindows: [Window] { allWindows.filter { $0.isFloating && !$0.isParked } }
+    @MainActor var isEffectivelyEmpty: Bool { LeanState.last.windows(in: name).isEmpty }
+    /// The window focusing the workspace focuses
+    @MainActor var mostRecentWindow: Window? { LeanState.last.mruWindow(in: name).flatMap { Window.get(byId: $0) } }
+
     @MainActor
-    var isVisible: Bool { visibleWorkspaceToScreenPoint.keys.contains(self) }
+    var isVisible: Bool { LeanState.last.monitor(showing: name) != nil }
+    /// The monitor it's (or would be) shown on: its forced one, else its current one, else the last one, else the
+    /// main one (Lean's `workspaceMonitor`)
     @MainActor
     var workspaceMonitor: Monitor {
-        forceAssignedMonitor
-            ?? visibleWorkspaceToScreenPoint[self]?.monitorApproximation
-            ?? assignedMonitorPoint?.monitorApproximation
+        let snapshot = LeanState.last
+        return forceAssignedMonitor
+            ?? (snapshot.monitor(showing: name) ?? snapshot.assigned[name]).flatMap(leanMonitor)
             ?? mainMonitor
+    }
+
+    @MainActor var forceAssignedMonitor: Monitor? {
+        guard let monitorDescriptions = config.workspaceToMonitorForceAssignment[name] else { return nil }
+        let sortedMonitors = sortedMonitors
+        return monitorDescriptions.lazy
+            .compactMap { $0.resolveMonitor(sortedMonitors: sortedMonitors) }
+            .first
     }
 }
 
 extension Monitor {
     @MainActor
     var activeWorkspace: Workspace {
-        if let existing = screenPointToVisibleWorkspace[rect.topLeftCorner] {
-            return existing
+        let id = leanMonitorId(rect.topLeftCorner)
+        if LeanState.last.workspace(onMonitor: id) == nil {
+            leanRefresh() // A monitor Lean hasn't heard of yet (monitor configuration changed)
         }
-        // A monitor Lean hasn't heard of yet (monitor configuration changed)
-        leanRefresh()
-        return screenPointToVisibleWorkspace[rect.topLeftCorner]
-            .orDie("Lean shows no workspace on monitor \(rect.topLeftCorner)")
+        let name = LeanState.last.workspace(onMonitor: id).orDie("Lean shows no workspace on monitor \(rect.topLeftCorner)")
+        return Workspace.get(byName: name)
     }
 
+    /// Lean refuses scratchpad homes, and workspaces forced onto another monitor
     @MainActor
     func setActiveWorkspace(_ workspace: Workspace) -> Bool {
-        rect.topLeftCorner.setActiveWorkspace(workspace)
+        let monitor = leanMonitorId(rect.topLeftCorner)
+        return leanApply(.showWorkspace(monitor: monitor, workspace: workspace.name)).workspace(onMonitor: monitor) == workspace.name
     }
 }
 
 @MainActor
 func gcMonitors() {
-    if screenPointToVisibleWorkspace.count != monitors.count {
+    if LeanState.last.screens.count != monitors.count {
         leanRefresh()
     }
 }
 
-extension CGPoint {
-    /// Lean refuses scratchpad homes, and workspaces forced onto another monitor
-    @MainActor
-    fileprivate func setActiveWorkspace(_ workspace: Workspace) -> Bool {
-        let monitor = leanMonitorId(self)
-        return leanApply(.showWorkspace(monitor: monitor, workspace: workspace.name)).workspace(onMonitor: monitor) == workspace.name
-    }
-}
-
-/// Make the visible workspaces match Lean's
+/// The connected monitor with Lean id `id`
 @MainActor
-func projectLeanScreens(_ snapshot: LeanSnapshot) {
-    var newScreenToWorkspace: [CGPoint: Workspace] = [:]
-    for screen in snapshot.screens {
-        guard let point = leanMonitorPoint(screen.monitor) else { continue }
-        newScreenToWorkspace[point] = Workspace.get(byName: screen.workspace)
-    }
-    screenPointToVisibleWorkspace = newScreenToWorkspace
-    visibleWorkspaceToScreenPoint = Dictionary(uniqueKeysWithValues: newScreenToWorkspace.map { ($0.value, $0.key) })
-    for (point, workspace) in newScreenToWorkspace {
-        workspace.assignedMonitorPoint = point
-    }
+func leanMonitor(_ id: Int) -> Monitor? {
+    guard let point = leanMonitorPoint(id) else { return nil }
+    return monitors.first { $0.rect.topLeftCorner == point }
 }

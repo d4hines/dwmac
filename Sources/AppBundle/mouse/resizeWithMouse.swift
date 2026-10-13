@@ -34,7 +34,7 @@ func resetManipulatedWithMouseIfPossible() async throws {
 @MainActor
 private func resizeWithMouse(_ window: Window) async throws { // todo cover with tests
     resetClosedWindowsCache()
-    guard let _ = window.nodeWorkspace else { return }
+    guard window.workspace != nil else { return }
 
     if window.isFloating {
         return
