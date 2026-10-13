@@ -26,8 +26,7 @@ struct MenuBarLabel: View {
 
     var body: some View {
         if #available(macOS 14, *) { // https://github.com/hillyu/Dwmac/issues/1122
-            let renderer = ImageRenderer(content: menuBarContent)
-            if let cgImage = renderer.cgImage {
+            if let cgImage = renderOnCpu(menuBarContent) {
                 // Using scale: 1 results in a blurry image for unknown reasons
                 Image(cgImage, scale: 2, label: Text(viewModel.trayText))
             } else {
@@ -207,6 +206,29 @@ struct MenuBarLabel: View {
             }
         }
     }
+}
+
+/// Rasterize `content` into a CPU bitmap. `ImageRenderer.cgImage` returns an image whose pixels the GPU produces
+/// lazily, and AppKit's drawing of the menu bar then waits for them on the main thread: with the GPU saturated (a
+/// training run), dwmac stopped answering until it was free. Drawing into a bitmap context never waits on the GPU
+@available(macOS 14, *)
+@MainActor
+private func renderOnCpu(_ content: some View) -> CGImage? {
+    let renderer = ImageRenderer(content: content)
+    let scale: CGFloat = 2 // The label is shown at scale 2
+    var image: CGImage? = nil
+    renderer.render { size, draw in
+        let width = Int((size.width * scale).rounded(.up)), height = Int((size.height * scale).rounded(.up))
+        guard width > 0, height > 0, let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+        ) else { return }
+        context.scaleBy(x: scale, y: scale)
+        draw(context)
+        image = context.makeImage()
+    }
+    return image
 }
 
 extension String {
