@@ -87,12 +87,12 @@ final class MacWindow: Window {
                 guard let s = try await getAxSize() else { fallthrough }
                 // Zoom will jump off if you do one pixel offset https://github.com/hillyu/Dwmac/issues/527
                 // todo this ad hoc won't be necessary once I implement optimization suggested by Zalim
-                let onePixelOffset = macApp.appId == .zoom ? .zero : CGPoint(x: 1, y: -1)
+                let onePixelOffset = macApp.rawAppBundleId == "us.zoom.xos" ? .zero : CGPoint(x: 1, y: -1)
                 p = visible.bottomLeftCorner + onePixelOffset + CGPoint(x: -s.width, y: 0)
             case .bottomRightCorner:
                 // Zoom will jump off if you do one pixel offset https://github.com/hillyu/Dwmac/issues/527
                 // todo this ad hoc won't be necessary once I implement optimization suggested by Zalim
-                let onePixelOffset = macApp.appId == .zoom ? .zero : CGPoint(x: 1, y: 1)
+                let onePixelOffset = macApp.rawAppBundleId == "us.zoom.xos" ? .zero : CGPoint(x: 1, y: 1)
                 p = visible.bottomRightCorner - onePixelOffset
         }
         setAxFrame(p, nil)
