@@ -695,10 +695,14 @@ def parseString (raw : String) : Parsed × List String :=
 
 /-! ## The text protocol -/
 
+/-- Tabs and newlines in strings travel as `\x1c` and `\x1d` -/
+def escape (s : String) : String := (s.replace "\t" "\x1c").replace "\n" "\x1d"
+def unescape (s : String) : String := (s.replace "\x1c" "\t").replace "\x1d" "\n"
+
 def V.render : V → String
   | .bool b => if b then "b1" else "b0"
-  | .str s => "s" ++ s
-  | .strs l => "l" ++ "\x1e".intercalate l
+  | .str s => "s" ++ escape s
+  | .strs l => "l" ++ "\x1e".intercalate (l.map escape)
 
 /-- `cmd <kind>` then `field <name> <value>` lines (value: `b0`/`b1`, `s<string>`, or `l<items>`); `help <text>`; or
 `fail <message>`. Newlines in help and messages are kept as `\x1f` -/

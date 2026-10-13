@@ -8,7 +8,7 @@ import Foundation
         isCli = false
         initServerArgs()
         if isDebug {
-            await toggleReleaseServerIfDebug(.off)
+            await toggleReleaseServerIfDebug("off")
             interceptTermination(SIGINT)
             interceptTermination(SIGKILL)
         }

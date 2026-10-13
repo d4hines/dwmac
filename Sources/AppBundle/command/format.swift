@@ -163,9 +163,9 @@ extension String {
 
 @MainActor private func toLayoutString(w: Workspace) -> String {
     switch (w.layout, w.orientation) {
-        case (.masterStack, .h): return LayoutCmdArgs.LayoutDescription.h_master_stack.rawValue
-        case (.masterStack, .v): return LayoutCmdArgs.LayoutDescription.v_master_stack.rawValue
-        case (.floating, _): return LayoutCmdArgs.LayoutDescription.floating.rawValue
+        case (.masterStack, .h): return "h_master-stack"
+        case (.masterStack, .v): return "v_master-stack"
+        case (.floating, _): return "floating"
     }
 }
 
@@ -180,5 +180,95 @@ extension String {
         let isHiddenApp = (w.app as? MacApp)?.nsApp.isHidden == true
         return .success(.string(isHiddenApp ? "macos_native_window_of_hidden_app" : "macos_native_fullscreen"))
     }
-    return .success(.string(w.isFloating ? LayoutCmdArgs.LayoutDescription.floating.rawValue : toLayoutString(w: workspace)))
+    return .success(.string(w.isFloating ? "floating" : toLayoutString(w: workspace)))
+}
+
+// MARK: - Format variables (`%{...}`). Lean checks --format against them (Lean/DwmacCore/Cli.lean)
+
+enum FormatVar: Equatable {
+    case window(WindowFormatVar)
+    case workspace(WorkspaceFormatVar)
+    case app(AppFormatVar)
+    case monitor(MonitorFormatVar)
+
+    enum WindowFormatVar: String, Equatable, CaseIterable {
+        case windowId = "window-id"
+        case windowIsFullscreen = "window-is-fullscreen"
+        case windowTitle = "window-title"
+        case windowLayout = "window-layout" // An alias for windowParentContainerLayout
+        case windowParentContainerLayout = "window-parent-container-layout"
+    }
+
+    enum WorkspaceFormatVar: String, Equatable, CaseIterable {
+        case workspaceName = "workspace"
+        case workspaceFocused = "workspace-is-focused"
+        case workspaceVisible = "workspace-is-visible"
+        case workspaceRootContainerLayout = "workspace-root-container-layout"
+    }
+
+    enum AppFormatVar: String, Equatable, CaseIterable {
+        case appBundleId = "app-bundle-id"
+        case appName = "app-name"
+        case appPid = "app-pid"
+        case appExecPath = "app-exec-path"
+        case appBundlePath = "app-bundle-path"
+    }
+
+    enum MonitorFormatVar: String, Equatable, CaseIterable {
+        case monitorId = "monitor-id"
+        case monitorAppKitNsScreenScreensId = "monitor-appkit-nsscreen-screens-id"
+        case monitorName = "monitor-name"
+        case monitorIsMain = "monitor-is-main"
+    }
+}
+
+enum PlainInterVar: String, CaseIterable {
+    case rightPadding = "right-padding"
+    case newline = "newline"
+    case tab = "tab"
+}
+
+enum AeroObjKind: CaseIterable, Sendable {
+    case window, workspace, app, monitor
+}
+
+func getAvailableInterVars(for kind: AeroObjKind) -> [String] {
+    _getAvailableInterVars(for: kind) + PlainInterVar.allCases.map(\.rawValue)
+}
+
+private func _getAvailableInterVars(for kind: AeroObjKind) -> [String] {
+    switch kind {
+        case .app: FormatVar.AppFormatVar.allCases.map(\.rawValue)
+        case .monitor: FormatVar.MonitorFormatVar.allCases.map(\.rawValue)
+        case .workspace:
+            FormatVar.WorkspaceFormatVar.allCases.map(\.rawValue) +
+                _getAvailableInterVars(for: .monitor)
+        case .window:
+            FormatVar.WindowFormatVar.allCases.map(\.rawValue) +
+                _getAvailableInterVars(for: .workspace) +
+                _getAvailableInterVars(for: .app)
+    }
+}
+
+extension CmdFields {
+    /// The `--count`, `--json` or `--format` output of a `list-*` command
+    @MainActor
+    func printList(_ list: [AeroObj], _ io: CmdIo, defaultFormat: [StringInterToken]) -> Bool {
+        if bool("outputOnlyCount") { return io.out("\(list.count)") }
+        // Lean's tokens: `v:<variable>` and `l:<literal>`
+        let custom: [StringInterToken] = strs("_format").map {
+            $0.hasPrefix("v:") ? .interVar(String($0.dropFirst(2))) : .literal(String($0.dropFirst(2)))
+        }
+        let format = custom.isEmpty ? defaultFormat : custom
+        if bool("json") {
+            return switch list.formatToJson(format, ignoreRightPaddingVar: custom.isEmpty) {
+                case .success(let json): io.out(json)
+                case .failure(let msg): io.err(msg)
+            }
+        }
+        return switch list.format(format) {
+            case .success(let lines): io.out(lines)
+            case .failure(let msg): io.err(msg)
+        }
+    }
 }

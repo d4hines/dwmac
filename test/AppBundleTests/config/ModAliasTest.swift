@@ -13,7 +13,7 @@ final class ModAliasTest: XCTestCase {
             """,
         )
         XCTAssertEqual(errors, [])
-        let binding = HotkeyBinding([.command, .option], .e, [FocusCommand.new(relative: .next)])
+        let binding = HotkeyBinding([.command, .option], .e, [cmd("focus next")])
         XCTAssertEqual(config.modes[mainModeId]?.bindings[binding.descriptionWithKeyCode], binding)
     }
 
@@ -26,7 +26,7 @@ final class ModAliasTest: XCTestCase {
             """,
         )
         XCTAssertEqual(errors, [])
-        let binding = HotkeyBinding([.command, .option, .control, .shift], .e, [FocusCommand.new(relative: .next)])
+        let binding = HotkeyBinding([.command, .option, .control, .shift], .e, [cmd("focus next")])
         XCTAssertEqual(config.modes[mainModeId]?.bindings[binding.descriptionWithKeyCode], binding)
     }
 
@@ -38,7 +38,7 @@ final class ModAliasTest: XCTestCase {
             """,
         )
         XCTAssertEqual(errors, [])
-        let binding = HotkeyBinding(.option, .e, [FocusCommand.new(relative: .next)])
+        let binding = HotkeyBinding(.option, .e, [cmd("focus next")])
         XCTAssertEqual(config.modes[mainModeId]?.bindings[binding.descriptionWithKeyCode], binding)
     }
 

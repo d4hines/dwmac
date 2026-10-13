@@ -17,7 +17,8 @@ func startUnixSocketServer() {
     listener.start(queue: .global())
 }
 
-func toggleReleaseServerIfDebug(_ state: EnableCmdArgs.State) async {
+/// `state`: `on` or `off`
+func toggleReleaseServerIfDebug(_ state: String) async {
     if serverArgs.isReadOnly { return }
     if !isDebug { return }
     let socketFile = "/tmp/\(stableDwmacAppId)-\(unixUserName).sock"
@@ -27,7 +28,7 @@ func toggleReleaseServerIfDebug(_ state: EnableCmdArgs.State) async {
         return
     }
 
-    let req = ClientRequest(args: ["enable", state.rawValue], stdin: "", windowId: nil, workspace: nil)
+    let req = ClientRequest(args: ["enable", state], stdin: "", windowId: nil, workspace: nil)
     _ = await connection.write(Result { try JSONEncoder().encode(req) }.getOrDie())
     _ = await connection.read()
 }

@@ -89,6 +89,25 @@ func leanRun(_ cmd: LeanCmd, _ io: CmdIo) -> LeanReply {
     return reply
 }
 
+/// Run a command Lean parses and resolves itself (see `execCli` in Lean/DwmacCore/StateFfi.lean) and pass on its output
+@MainActor
+func leanRunCli(_ args: [String], _ env: CmdEnv, stdin: [String], _ io: CmdIo) -> LeanReply {
+    leanSyncEnvironment()
+    let before = LeanState.last
+    let input = [
+        "cli",
+        env.windowId.map(String.init) ?? "-",
+        env.workspaceName?.leanEscaped ?? "-",
+        stdin.map(\.leanEscaped).joined(separator: "\u{1e}"),
+        args.map(\.leanEscaped).joined(separator: "\u{1f}"),
+    ].joined(separator: "\t")
+    let reply = LeanState.runRaw(input)
+    placeSummoned(before: before)
+    io.out(reply.out)
+    io.err(reply.err)
+    return reply
+}
+
 /// Pick up monitor and config changes
 @MainActor func leanRefresh() {
     let before = LeanState.last

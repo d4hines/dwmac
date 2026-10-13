@@ -2,35 +2,36 @@ import AppKit
 import Common
 
 struct MoveMouseCommand: Command {
-    let args: MoveMouseCmdArgs
+    let args: CmdFields
     /*conforms*/ var shouldResetClosedWindowsCache = false
 
     func run(_ env: CmdEnv, _ io: CmdIo) async throws -> Bool {
         let mouse = mouseLocation
         guard let target = args.resolveTargetOrReportError(env, io) else { return false }
-        switch args.mouseTarget.val {
-            case .windowLazyCenter:
+        let failIfNoop = args.bool("failIfNoop")
+        switch args.str("mouseTarget") {
+            case "window-lazy-center":
                 guard let rect = try await windowSubjectRectOrReportError(target, io) else { return false }
                 if rect.contains(mouse) {
-                    if !args.failIfNoop {
+                    if !failIfNoop {
                         io.err("The mouse already belongs to the window. Tip: use --fail-if-noop to exit with non-zero code")
                     }
-                    return !args.failIfNoop
+                    return !failIfNoop
                 }
                 return moveMouse(io, rect.center)
-            case .windowForceCenter:
+            case "window-force-center":
                 guard let rect = try await windowSubjectRectOrReportError(target, io) else { return false }
                 return moveMouse(io, rect.center)
-            case .monitorLazyCenter:
+            case "monitor-lazy-center":
                 let rect = target.workspace.workspaceMonitor.rect
                 if rect.contains(mouse) {
-                    if !args.failIfNoop {
+                    if !failIfNoop {
                         io.err("The mouse already belongs to the monitor. Tip: use --fail-if-noop to exit with non-zero code")
                     }
-                    return !args.failIfNoop
+                    return !failIfNoop
                 }
                 return moveMouse(io, rect.center)
-            case .monitorForceCenter:
+            default: // monitor-force-center
                 return moveMouse(io, target.workspace.workspaceMonitor.rect.center)
         }
     }

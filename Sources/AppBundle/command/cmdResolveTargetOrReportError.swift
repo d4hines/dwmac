@@ -1,18 +1,9 @@
 import Common
 
-extension CmdArgs {
+extension CmdFields {
     @MainActor
     var workspace: Workspace? {
-        if let workspaceName { Workspace.get(byName: workspaceName.raw) } else { nil }
-    }
-
-    /// The target, for a command Lean runs (Lean resolves it)
-    func leanTarget(_ env: CmdEnv) -> LeanCmd.Target {
-        if let windowId { return .window(windowId, fromEnv: false) }
-        if let workspaceName { return .workspace(workspaceName.raw) }
-        if let windowId = env.windowId { return .window(windowId, fromEnv: true) }
-        if let workspaceName = env.workspaceName { return .workspace(workspaceName) }
-        return .focused
+        if let workspaceName { Workspace.get(byName: workspaceName) } else { nil }
     }
 
     @MainActor

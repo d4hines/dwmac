@@ -55,18 +55,6 @@ func assertFail<F>(_ actual: Result<some Any, F>, _ expected: F? = nil, file: St
     }
 }
 
-func testParseCommandSucc(_ command: String, _ expected: any CmdArgs) {
-    let parsed = parseCommand(command)
-    switch parsed {
-        case .cmd(let command):
-            if !command.args.equals(expected) {
-                failExpectedActual(expected, command.args)
-            }
-        case .help: die() // todo test help
-        case .failure(let msg): XCTFail(msg)
-    }
-}
-
 private func failExpectedActual(_ expected: Any, _ actual: Any, additionalMsg: String? = nil, file: String = #filePath, line: Int = #line) {
     let additionalMsg = additionalMsg.map { "\n    Additional Message:\n        \($0)" } ?? ""
     XCTFail(

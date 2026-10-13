@@ -12,7 +12,7 @@ final class MoveCommandTest: XCTestCase {
         _ = window.focusWindow()
 
         // Move right
-        try await MoveCommand(args: MoveCmdArgs(rawArgs: [], .right)).run(.defaultEnv, .emptyStdin)
+        try await cmd("move right").run(.defaultEnv, .emptyStdin)
 
         // Expected: x += 50 -> 150
         var rect = try await window.getAxRect()
@@ -20,7 +20,7 @@ final class MoveCommandTest: XCTestCase {
         assertEquals(rect?.topLeftCorner.y, 100)
 
         // Move down
-        try await MoveCommand(args: MoveCmdArgs(rawArgs: [], .down)).run(.defaultEnv, .emptyStdin)
+        try await cmd("move down").run(.defaultEnv, .emptyStdin)
 
         rect = try await window.getAxRect()
         assertEquals(rect?.topLeftCorner.x, 150)
@@ -33,7 +33,7 @@ final class MoveCommandTest: XCTestCase {
         _ = window.focusWindow()
         // Window is tiling by default (bound to workspace)
 
-        let result = try await MoveCommand(args: MoveCmdArgs(rawArgs: [], .right)).run(.defaultEnv, .emptyStdin)
+        let result = try await cmd("move right").run(.defaultEnv, .emptyStdin)
         assertEquals(result.exitCode, 1)
     }
 }

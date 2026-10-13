@@ -1,3 +1,4 @@
+import CDwmacCore
 import Common
 import Darwin
 import Foundation
@@ -52,16 +53,20 @@ struct Main {
             exit(0)
         }
 
-        var parsedArgs: (any CmdArgs)! = nil
-        switch parseCmdArgs(args) {
-            case .cmd(let _parsedArgs):
-                parsedArgs = _parsedArgs
-            case .help(let help):
-                print(help)
+        // Lean/DwmacCore/Cli.lean; see `query` in StateFfi.lean
+        let escaped = args.map { $0.replacingOccurrences(of: "\t", with: "\u{1c}").replacingOccurrences(of: "\n", with: "\u{1d}") }
+        let parsed: [[String]] = leanQuery("parseArgs\t" + escaped.joined(separator: "\u{1f}"))
+            .split(separator: "\n").map { $0.split(separator: "\t", maxSplits: 3, omittingEmptySubsequences: false).map(String.init) }
+        switch parsed.first?.first {
+            case "help":
+                print(parsed[0].dropFirst().joined(separator: "\t").replacingOccurrences(of: "\u{1f}", with: "\n"))
                 exit(0)
-            case .failure(let e):
-                exit(stderrMsg: e)
+            case "fail":
+                exit(stderrMsg: parsed[0].dropFirst().joined(separator: "\t").replacingOccurrences(of: "\u{1f}", with: "\n"))
+            default: break
         }
+        let kind = parsed.first?.getOrNil(atIndex: 1) ?? ""
+        func field(_ key: String) -> String? { parsed.first { $0.first == "field" && $0.getOrNil(atIndex: 1) == key }?.getOrNil(atIndex: 2) }
 
         let connection = NWConnection(to: NWEndpoint.unix(path: socketPath), using: .tcp)
 
@@ -70,13 +75,11 @@ struct Main {
         }
 
         var stdin = ""
-        if (parsedArgs is WorkspaceCmdArgs && (parsedArgs as! WorkspaceCmdArgs).target.val.isRelatve
-            || parsedArgs is MoveNodeToWorkspaceCmdArgs && (parsedArgs as! MoveNodeToWorkspaceCmdArgs).target.val.isRelatve)
+        // `workspace next` and `move-node-to-workspace next` can take their workspaces from stdin
+        if ["workspace", "move-node-to-workspace"].contains(kind) && ["snext", "sprev"].contains(field("target"))
             && hasStdin()
         {
-            if parsedArgs is WorkspaceCmdArgs && (parsedArgs as! WorkspaceCmdArgs).explicitStdinFlag == nil ||
-                parsedArgs is MoveNodeToWorkspaceCmdArgs && (parsedArgs as! MoveNodeToWorkspaceCmdArgs).explicitStdinFlag == nil
-            {
+            if field("explicitStdinFlag") == nil {
                 exit(
                     stderrMsg: """
                         ERROR: Implicit stdin is detected (stdin is not TTY). Implicit stdin was forbidden in Dwmac v0.20.0.
@@ -131,4 +134,10 @@ func run(_ connection: NWConnection, _ args: StrArrSlice, stdin: String, windowI
         case .failure(let error):
             exit(stderrMsg: "Failed to read from server socket: \(error)")
     }
+}
+
+private func leanQuery(_ input: String) -> String {
+    guard let raw = dwmac_query(input) else { return "" }
+    defer { free(raw) }
+    return String(cString: raw)
 }

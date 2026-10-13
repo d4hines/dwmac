@@ -12,7 +12,7 @@ final class ScratchpadCommandTest: XCTestCase {
     private var scratchpad: Scratchpad { config.scratchpads["test"].orDie() }
 
     private func toggle() async throws {
-        try await ScratchpadCommand(args: ScratchpadCmdArgs(rawArgs: []).copy(\.name, .initialized("test")))
+        try await cmd("scratchpad test")
             .run(.defaultEnv, .emptyStdin)
     }
 

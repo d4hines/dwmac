@@ -2,8 +2,8 @@ import AppKit
 import Common
 
 protocol Command: AeroAny, Equatable, Sendable {
-    associatedtype T where T: CmdArgs
-    var args: T { get }
+    /// What Lean parsed (Lean/DwmacCore/Cli.lean)
+    var args: CmdFields { get }
     @MainActor
     func run(_ env: CmdEnv, _ io: CmdIo) async throws -> Bool
 
@@ -13,7 +13,7 @@ protocol Command: AeroAny, Equatable, Sendable {
 
 extension Command {
     static func == (lhs: Self, rhs: Self) -> Bool {
-        return lhs.args.equals(rhs.args)
+        return lhs.args == rhs.args
     }
 
     nonisolated func equals(_ other: any Command) -> Bool {
@@ -21,9 +21,6 @@ extension Command {
     }
 }
 
-extension Command {
-    var info: CmdStaticInfo { T.info }
-}
 
 extension Command {
     @MainActor
@@ -58,4 +55,10 @@ extension [Command] {
         let isSucc = try await runCmdSeq(env, io)
         return CmdResult(stdout: io.stdout, stderr: io.stderr, exitCode: isSucc ? 0 : 1)
     }
+}
+
+let noWindowIsFocused = "No window is focused"
+
+func windowIsntPartOfTree(_ window: Window) -> String {
+    "Window \(window.windowId) is not part of tree (minimized or hidden)"
 }

@@ -2,7 +2,7 @@ import AppKit
 import Common
 
 struct MoveCommand: Command {
-    let args: MoveCmdArgs
+    let args: CmdFields
     /*conforms*/ var shouldResetClosedWindowsCache = true
 
     func run(_ env: CmdEnv, _ io: CmdIo) async throws -> Bool {
@@ -17,11 +17,11 @@ struct MoveCommand: Command {
         var newOrigin = rect.topLeftCorner
         let step: CGFloat = 50
 
-        switch args.direction.val {
-            case .left:  newOrigin.x -= step
-            case .right: newOrigin.x += step
-            case .up:    newOrigin.y -= step
-            case .down:  newOrigin.y += step
+        switch args.str("direction") {
+            case "left": newOrigin.x -= step
+            case "right": newOrigin.x += step
+            case "up": newOrigin.y -= step
+            default: newOrigin.y += step // down
         }
 
         window.setAxFrame(newOrigin, nil)

@@ -2,12 +2,12 @@ import AppKit
 import Common
 
 struct ReloadConfigCommand: Command {
-    let args: ReloadConfigCmdArgs
+    let args: CmdFields
     /*conforms*/ var shouldResetClosedWindowsCache = false
 
     func run(_ env: CmdEnv, _ io: CmdIo) async throws -> Bool {
         var stdout = ""
-        let isOk = try await reloadConfig(args: args, stdout: &stdout)
+        let isOk = try await reloadConfig(dryRun: args.bool("dryRun"), noGui: args.bool("noGui"), stdout: &stdout)
         if !stdout.isEmpty {
             io.out(stdout)
         }
@@ -21,13 +21,14 @@ struct ReloadConfigCommand: Command {
 }
 
 @MainActor func reloadConfig(
-    args: ReloadConfigCmdArgs = ReloadConfigCmdArgs(rawArgs: []),
+    dryRun: Bool = false,
+    noGui: Bool = false,
     forceConfigUrl: URL? = nil,
     stdout: inout String,
 ) async throws -> Bool {
     switch readConfig(forceConfigUrl: forceConfigUrl) {
         case .success(let (parsedConfig, url)):
-            if !args.dryRun {
+            if !dryRun {
                 resetHotKeys()
                 config = parsedConfig
                 configUrl = url
@@ -38,7 +39,7 @@ struct ReloadConfigCommand: Command {
             return true
         case .failure(let msg):
             stdout.append(msg)
-            if !args.noGui {
+            if !noGui {
                 Task { @MainActor in
                     MessageModel.shared.message = Message(description: "Dwmac Config Error", body: msg)
                 }

@@ -57,9 +57,9 @@ final class ConfigTest: XCTestCase {
             """,
         )
         assertEquals(errors, [])
-        let lcmdA = HotkeyBinding([.command, .lCommand], .a, [FocusCommand.new(relative: .next)], descriptionWithKeyNotation: "lcmd-a")
-        let rcmdA = HotkeyBinding([.command, .rCommand], .a, [FocusCommand.new(relative: .prev)], descriptionWithKeyNotation: "rcmd-a")
-        let cmdA = HotkeyBinding(.command, .a, [FocusCommand.new(relative: .next)], descriptionWithKeyNotation: "cmd-a")
+        let lcmdA = HotkeyBinding([.command, .lCommand], .a, [cmd("focus next")], descriptionWithKeyNotation: "lcmd-a")
+        let rcmdA = HotkeyBinding([.command, .rCommand], .a, [cmd("focus prev")], descriptionWithKeyNotation: "rcmd-a")
+        let cmdA = HotkeyBinding(.command, .a, [cmd("focus next")], descriptionWithKeyNotation: "cmd-a")
 
         assertEquals(
             config.modes[mainModeId]?.bindings[lcmdA.descriptionWithKeyCode],
@@ -103,7 +103,7 @@ final class ConfigTest: XCTestCase {
             """,
         )
         assertEquals(errors, [])
-        let binding = HotkeyBinding(.option, .h, [FocusCommand.new(relative: .next)])
+        let binding = HotkeyBinding(.option, .h, [cmd("focus next")])
         assertEquals(
             config.modes[mainModeId],
             Mode(name: nil, bindings: [binding.descriptionWithKeyCode: binding]),
@@ -140,7 +140,7 @@ final class ConfigTest: XCTestCase {
                 "mode.main.binding.alt-hh: Can\'t parse the key in \'alt-hh\' binding",
             ],
         )
-        let binding = HotkeyBinding(.option, .k, [FocusCommand.new(relative: .prev)])
+        let binding = HotkeyBinding(.option, .k, [cmd("focus prev")])
         assertEquals(
             config.modes[mainModeId],
             Mode(name: nil, bindings: [binding.descriptionWithKeyCode: binding]),
@@ -207,14 +207,14 @@ final class ConfigTest: XCTestCase {
     }
 
     func testMoveWorkspaceToMonitorCommandParsing() {
-        XCTAssertTrue(parseCommand("move-workspace-to-monitor --wrap-around next").cmdOrNil is MoveWorkspaceToMonitorCommand)
-        XCTAssertTrue(parseCommand("move-workspace-to-display --wrap-around next").cmdOrNil is MoveWorkspaceToMonitorCommand)
+        assertEquals(parseCommand("move-workspace-to-monitor --wrap-around next").cmdOrNil?.args.kind, "move-workspace-to-monitor")
+        assertEquals(parseCommand("move-workspace-to-display --wrap-around next").cmdOrNil?.args.kind, "move-workspace-to-monitor")
     }
 
     func testParseMasterStack() {
         let command = parseCommand("layout master-stack h_master-stack v_master-stack").cmdOrNil
-        XCTAssertTrue(command is LayoutCommand)
-        assertEquals((command as! LayoutCommand).args.toggleBetween.val, [.master_stack, .h_master_stack, .v_master_stack])
+        assertEquals(command?.args.kind, "layout")
+        assertEquals(command?.args.strs("toggleBetween"), ["master-stack", "h_master-stack", "v_master-stack"])
 
         guard case .help = parseCommand("layout master-stack -h") else {
             XCTFail()
@@ -287,8 +287,8 @@ final class ConfigTest: XCTestCase {
                 ),
                 checkFurtherCallbacks: true,
                 rawRun: [
-                    LayoutCommand(args: LayoutCmdArgs(rawArgs: [], toggleBetween: [.floating])),
-                    MoveNodeToWorkspaceCommand(args: MoveNodeToWorkspaceCmdArgs(workspace: "W")),
+                    cmd("layout floating"),
+                    cmd("move-node-to-workspace W"),
                 ],
             ),
             WindowDetectedCallback( // 1
@@ -301,20 +301,20 @@ final class ConfigTest: XCTestCase {
             ),
             WindowDetectedCallback( // 3
                 rawRun: [
-                    MoveNodeToWorkspaceCommand(args: MoveNodeToWorkspaceCmdArgs(workspace: "S")),
-                    LayoutCommand(args: LayoutCmdArgs(rawArgs: [], toggleBetween: [.tiling])),
+                    cmd("move-node-to-workspace S"),
+                    cmd("layout tiling"),
                 ],
             ),
             WindowDetectedCallback( // 4
                 rawRun: [
-                    MoveNodeToWorkspaceCommand(args: MoveNodeToWorkspaceCmdArgs(workspace: "S")),
-                    MoveNodeToWorkspaceCommand(args: MoveNodeToWorkspaceCmdArgs(workspace: "W")),
+                    cmd("move-node-to-workspace S"),
+                    cmd("move-node-to-workspace W"),
                 ],
             ),
             WindowDetectedCallback( // 5
                 rawRun: [
-                    MoveNodeToWorkspaceCommand(args: MoveNodeToWorkspaceCmdArgs(workspace: "S")),
-                    LayoutCommand(args: LayoutCmdArgs(rawArgs: [], toggleBetween: [.h_master_stack])),
+                    cmd("move-node-to-workspace S"),
+                    cmd("layout h_master-stack"),
                 ],
             ),
         ])
@@ -410,7 +410,7 @@ final class ConfigTest: XCTestCase {
             "q": .q,
             "unicorn": .u,
         ]))
-        let binding = HotkeyBinding(.option, .u, [WorkspaceCommand(args: WorkspaceCmdArgs(target: .direct(.parse("unicorn").getOrDie())))])
+        let binding = HotkeyBinding(.option, .u, [cmd("workspace wonderland")])
         assertEquals(config.modes[mainModeId]?.bindings, [binding.descriptionWithKeyCode: binding])
 
         let (_, errors1) = parseConfig(

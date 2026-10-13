@@ -2,7 +2,7 @@ import AppKit
 import Common
 
 struct ResizeCommand: Command {
-    let args: ResizeCmdArgs
+    let args: CmdFields
     /*conforms*/ var shouldResetClosedWindowsCache = true
 
     func run(_ env: CmdEnv, _ io: CmdIo) async throws -> Bool {
@@ -16,32 +16,18 @@ struct ResizeCommand: Command {
         guard let rect = try? await window.getAxRect() else { return false }
         var newSize = rect.size
 
-        let diff: CGFloat = switch args.units.val {
-            case .set(let unit): CGFloat(unit)
-            case .add(let unit): CGFloat(unit)
-            case .subtract(let unit): -CGFloat(unit)
-        }
+        // `[+|-]<number>`: add, subtract, or set
+        let units = args.str("units") ?? "0"
+        let isRelative = units.starts(with: "+") || units.starts(with: "-")
+        let number = CGFloat(Double(units.removePrefix("+").removePrefix("-")) ?? 0)
+        let diff = units.starts(with: "-") ? -number : number
+        func apply(_ current: CGFloat) -> CGFloat { isRelative ? current + diff : diff }
 
-        // Helper to apply change
-        func apply(_ current: CGFloat) -> CGFloat {
-            if case .set = args.units.val {
-                return diff
-            } else {
-                return current + diff
-            }
-        }
-
-        switch args.dimension.val {
-            case .width:
-                newSize.width = apply(newSize.width)
-            case .height:
+        switch args.str("dimension") {
+            case "height", "smart-opposite": // smart-opposite is height for a floating window
                 newSize.height = apply(newSize.height)
-            case .smart:
-                // Default to width for smart on floating
+            default: // width, and smart
                 newSize.width = apply(newSize.width)
-            case .smartOpposite:
-                // Default to height for smart-opposite on floating
-                newSize.height = apply(newSize.height)
         }
 
         // Prevent collapsing to zero/negative

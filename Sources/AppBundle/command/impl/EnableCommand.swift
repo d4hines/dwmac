@@ -2,22 +2,22 @@ import AppKit
 import Common
 
 struct EnableCommand: Command {
-    let args: EnableCmdArgs
+    let args: CmdFields
     /*conforms*/ var shouldResetClosedWindowsCache = false
 
     func run(_ env: CmdEnv, _ io: CmdIo) async throws -> Bool {
         let prevState = TrayMenuModel.shared.isEnabled
-        let newState: Bool = switch args.targetState.val {
-            case .on: true
-            case .off: false
-            case .toggle: !TrayMenuModel.shared.isEnabled
+        let newState: Bool = switch args.str("targetState") {
+            case "on": true
+            case "off": false
+            default: !TrayMenuModel.shared.isEnabled
         }
         if newState == prevState {
-            if !args.failIfNoop {
+            if !args.bool("failIfNoop") {
                 io.out((newState ? "Already enabled" : "Already disabled") +
                     "Tip: use --fail-if-noop to exit with non-zero code")
             }
-            return !args.failIfNoop
+            return !args.bool("failIfNoop")
         }
 
         TrayMenuModel.shared.isEnabled = newState

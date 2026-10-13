@@ -2,7 +2,7 @@ import AppKit
 import Common
 
 struct CloseCommand: Command {
-    let args: CloseCmdArgs
+    let args: CmdFields
     /*conforms*/ var shouldResetClosedWindowsCache = false
 
     func run(_ env: CmdEnv, _ io: CmdIo) async throws -> Bool {
@@ -12,7 +12,7 @@ struct CloseCommand: Command {
                 return io.err("Empty workspace")
             }
             // Access ax directly. Not cool :(
-            if try await args.quitIfLastWindow.andAsync({ @MainActor @Sendable in try await window.macAppUnsafe.getAxWindowsCount() == 1 }) {
+            if try await args.bool("quitIfLastWindow").andAsync({ @MainActor @Sendable in try await window.macAppUnsafe.getAxWindowsCount() == 1 }) {
                 let app = window.macAppUnsafe
                 if app.nsApp.terminate() {
                     for window in Window.allWindowsMap.values where window.app.pid == app.pid {

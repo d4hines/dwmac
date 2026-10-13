@@ -132,9 +132,9 @@ extension ParsedCmd where T == any Command {
     fileprivate func toEither() -> Parsed<T> {
         return switch self {
             case .cmd(let a):
-                a.info.allowInConfig
+                a.args.allowInConfig
                     ? .success(a)
-                    : .failure("Command '\(a.info.kind.rawValue)' cannot be used in config")
+                    : .failure("Command '\(a.args.kind)' cannot be used in config")
             case .help(let a): .failure(a)
             case .failure(let a): .failure(a)
         }
@@ -201,8 +201,12 @@ func parseCommandOrCommands(_ raw: TOMLValueConvertible) -> Parsed<[any Command]
         config.persistentWorkspaces = (config.modes.values.lazy
             .flatMap { (mode: Mode) -> [HotkeyBinding] in Array(mode.bindings.values) }
             .flatMap { (binding: HotkeyBinding) -> [String] in
-                binding.commands.filterIsInstance(of: WorkspaceCommand.self).compactMap { $0.args.target.val.workspaceNameOrNil()?.raw } +
-                    binding.commands.filterIsInstance(of: MoveNodeToWorkspaceCommand.self).compactMap { $0.args.target.val.workspaceNameOrNil()?.raw }
+                // The workspace named by `workspace <name>` and `move-node-to-workspace <name>` (Lean's `=<name>`)
+                binding.commands.compactMap { command in
+                    ["workspace", "move-node-to-workspace"].contains(command.args.kind)
+                        ? command.args.str("target").flatMap { $0.hasPrefix("=") ? String($0.dropFirst()) : nil }
+                        : nil
+                }
             }
             + (config.workspaceToMonitorForceAssignment).keys)
             .toOrderedSet()
@@ -414,4 +418,16 @@ func expectedActualTypeError(expected: TOMLType, actual: TOMLType, _ backtrace: 
 
 func expectedActualTypeError(expected: [TOMLType], actual: TOMLType, _ backtrace: TomlBacktrace) -> TomlParseError {
     .semantic(backtrace, expectedActualTypeError(expected: expected, actual: actual))
+}
+
+func expectedActualTypeError(expected: TOMLType, actual: TOMLType) -> String {
+    "Expected type is '\(expected)'. But actual type is '\(actual)'"
+}
+
+func expectedActualTypeError(expected: [TOMLType], actual: TOMLType) -> String {
+    if let single = expected.singleOrNil() {
+        return expectedActualTypeError(expected: single, actual: actual)
+    } else {
+        return "Expected types are \(expected.map { "'\($0.description)'" }.joined(separator: " or ")). But actual type is '\(actual)'"
+    }
 }

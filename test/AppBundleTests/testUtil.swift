@@ -66,27 +66,9 @@ func testParseCommandFail(_ command: String, msg expected: String) {
     }
 }
 
-extension WorkspaceCmdArgs {
-    init(target: WorkspaceTarget, autoBackAndForth: Bool? = nil, wrapAround: Bool? = nil) {
-        self = WorkspaceCmdArgs(rawArgs: [])
-        self.target = .initialized(target)
-        self._autoBackAndForth = autoBackAndForth
-        self._wrapAround = wrapAround
-    }
-}
-
-extension MoveNodeToWorkspaceCmdArgs {
-    init(target: WorkspaceTarget, wrapAround: Bool? = nil) {
-        self = MoveNodeToWorkspaceCmdArgs(rawArgs: [])
-        self.target = .initialized(target)
-        self._wrapAround = wrapAround
-    }
-
-    init(workspace: String) {
-        self = MoveNodeToWorkspaceCmdArgs(rawArgs: [])
-        self.target = .initialized(.direct(.parse(workspace).getOrDie()))
-    }
-}
+/// A command, parsed by Lean
+@MainActor
+func cmd(_ raw: String) -> any Command { parseCommand(raw).cmdOrNil ?? dieT("Can't parse '\(raw)'") }
 
 extension HotkeyBinding {
     init(_ modifiers: NSEvent.ModifierFlags, _ keyCode: Key, _ commands: [any Command]) {

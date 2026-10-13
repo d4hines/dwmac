@@ -95,92 +95,18 @@ extension String {
     }
 }
 
-/// A command (Lean/DwmacCore/Command.lean), with what only Swift knows (monitors, stdin) resolved
+/// The commands Swift sends Lean already resolved (Lean/DwmacCore/Command.lean). The CLI commands go as their
+/// arguments (`leanRunCli`)
 enum LeanCmd {
-    /// What a command acts on: `--window-id`/`DWMAC_WINDOW_ID` (`fromEnv`), `--workspace`/`DWMAC_WORKSPACE`, else focus
-    enum Target {
-        case focused
-        case window(UInt32, fromEnv: Bool)
-        case workspace(String)
-    }
-    enum WsTo {
-        case name(String)
-        /// Among the workspaces on the target's monitor, or `among` (from stdin)
-        case relative(NextPrev, wrap: Bool, among: [String]?)
-    }
-    enum FocusTo {
-        case window(UInt32)
-        case index(Int)
-        case relative(NextPrev, boundary: String)
-    }
-
-    case focus(Target, FocusTo)
-    case focusBackAndForth
-    case focusMasterOrBack
-    case focusMonitor(Int)
-    case workspace(Target, WsTo, autoBackAndForth: Bool, failIfNoop: Bool)
-    case workspaceBackAndForth
-    case summonWorkspace(String, failIfNoop: Bool)
-    case moveWorkspaceToMonitor(Target, monitor: Int)
-    case moveNodeToWorkspace(Target, WsTo, focusFollows: Bool, failIfNoop: Bool)
-    /// `direction`: the direction it was given as, if any. Moving right or down along the target workspace's
-    /// orientation puts the window first
-    case moveNodeToMonitor(Target, monitor: Int, direction: CardinalDirection?, focusFollows: Bool, failIfNoop: Bool)
-    case moveNodeToMaster
-    case rotate
+    case scratchpad(String)
     /// The window macOS says is focused (nil for a popup or no window), and the time in ms
     case syncFocus(UInt32?, now: Int)
-    case swap(Target, NextPrev, wrap: Bool, swapFocus: Bool)
-    case scratchpad(String)
-    case layout(Target, [String])
-    case mfact(LeanOp.MfactChange)
-    case fullscreen(Target, String, noOuterGaps: Bool, failIfNoop: Bool)
 
     /// See `parseCmd` in Lean/DwmacCore/StateFfi.lean
     var encoded: String {
-        func b(_ value: Bool) -> String { value ? "1" : "0" }
-        func target(_ t: Target) -> String {
-            switch t {
-                case .focused: "-"
-                case .window(let id, let fromEnv): (fromEnv ? "e" : "w") + "\(id)"
-                case .workspace(let ws): "s" + ws
-            }
-        }
-        func wsTo(_ to: WsTo) -> [String] {
-            switch to {
-                case .name(let ws): ["name", ws, "-", "-"]
-                case .relative(let dir, let wrap, let among):
-                    [dir == .next ? "next" : "prev", "-", b(wrap), among.map { $0.joined(separator: "\u{1e}") } ?? "-"]
-            }
-        }
         let fields: [String] = switch self {
-            case .focus(let t, .window(let id)): ["focus", target(t), "window", "\(id)"]
-            case .focus(let t, .index(let n)): ["focus", target(t), "index", "\(max(n, 0))"]
-            case .focus(let t, .relative(let dir, let boundary)):
-                ["focus", target(t), dir == .next ? "next" : "prev", boundary]
-            case .focusBackAndForth: ["focusBackAndForth"]
-            case .focusMasterOrBack: ["focusMasterOrBack"]
-            case .focusMonitor(let mon): ["focusMonitor", "\(mon)"]
-            case .workspace(let t, let to, let autoBackAndForth, let failIfNoop):
-                ["workspace", target(t)] + wsTo(to) + [b(autoBackAndForth), b(failIfNoop)]
-            case .workspaceBackAndForth: ["workspaceBackAndForth"]
-            case .summonWorkspace(let ws, let failIfNoop): ["summonWorkspace", ws, b(failIfNoop)]
-            case .moveWorkspaceToMonitor(let t, let mon): ["moveWorkspaceToMonitor", target(t), "\(mon)"]
-            case .moveNodeToWorkspace(let t, let to, let focusFollows, let failIfNoop):
-                ["moveNodeToWorkspace", target(t)] + wsTo(to) + [b(focusFollows), b(failIfNoop)]
-            case .moveNodeToMonitor(let t, let mon, let dir, let focusFollows, let failIfNoop):
-                ["moveNodeToMonitor", target(t), "\(mon)",
-                 dir.map { ($0.orientation == .h ? "h" : "v") + b($0.isPositive) } ?? "-", b(focusFollows), b(failIfNoop)]
-            case .moveNodeToMaster: ["moveNodeToMaster"]
-            case .rotate: ["rotate"]
-            case .syncFocus(let native, let now): ["syncFocus", native.map(String.init) ?? "-", "\(max(now, 0))"]
-            case .swap(let t, let dir, let wrap, let swapFocus):
-                ["swap", target(t), dir == .next ? "next" : "prev", b(wrap), b(swapFocus)]
             case .scratchpad(let name): ["scratchpad", name]
-            case .layout(let t, let descriptions): ["layout", target(t), descriptions.joined(separator: "\u{1e}")]
-            case .mfact(let change): ["mfact"] + change.leanFields
-            case .fullscreen(let t, let toggle, let noOuterGaps, let failIfNoop):
-                ["fullscreen", target(t), toggle, b(noOuterGaps), b(failIfNoop)]
+            case .syncFocus(let native, let now): ["syncFocus", native.map(String.init) ?? "-", "\(max(now, 0))"]
         }
         return (["cmd"] + fields).joined(separator: "\t")
     }
@@ -387,6 +313,9 @@ enum LeanState {
 
     static func run(_ cmd: LeanCmd) -> LeanReply { exec(cmd.encoded) }
 
+    /// An input already encoded (see `State.execText` in Lean/DwmacCore/StateFfi.lean)
+    static func runRaw(_ input: String) -> LeanReply { exec(input) }
+
     /// The reply `run` would give, without changing anything
     static func preview(_ cmd: LeanCmd) -> LeanReply {
         guard let raw = dwmac_state_preview(cmd.encoded) else { return LeanReply(parsing: "") }
@@ -409,9 +338,9 @@ enum LeanState {
         return String(cString: raw).split(separator: "\n").compactMap(LeanEffect.init(parsing:))
     }
 
-    /// Answer a question that doesn't change the state (see `query` in Lean/DwmacCore/StateFfi.lean)
-    static func query(_ input: String) -> String {
-        guard let raw = dwmac_state_query(input) else { return "" }
+    /// Answer a question that doesn't need the state, from any thread (see `query` in Lean/DwmacCore/StateFfi.lean)
+    nonisolated static func query(_ input: String) -> String {
+        guard let raw = dwmac_query(input) else { return "" }
         defer { free(raw) }
         return String(cString: raw)
     }

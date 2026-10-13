@@ -75,6 +75,7 @@ let package = Package(
             name: "Cli",
             dependencies: [
                 .target(name: "Common"),
+                .target(name: "CDwmacCore"), // Lean parses the command line (help and errors work without the server)
             ],
         ),
         .testTarget(

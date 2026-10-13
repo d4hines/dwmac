@@ -3,7 +3,7 @@ import Common
 
 /// See: MacosNativeFullscreenCommand. Problem ID-B6E178F2
 struct MacosNativeMinimizeCommand: Command {
-    let args: MacosNativeMinimizeCmdArgs
+    let args: CmdFields
     /*conforms*/ var shouldResetClosedWindowsCache = false
 
     func run(_ env: CmdEnv, _ io: CmdIo) async throws -> Bool {

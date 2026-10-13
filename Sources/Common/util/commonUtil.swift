@@ -210,3 +210,9 @@ public func allowOnlyCancellationError<T>(isolation: isolated (any Actor)? = #is
         die("throws must only be used for CancellationError")
     }
 }
+
+public typealias SendableWritableKeyPath<A, B> = Sendable & WritableKeyPath<A, B>
+
+public func parseEnum<T: RawRepresentable>(_ raw: String, _ _: T.Type) -> Parsed<T> where T.RawValue == String, T: CaseIterable {
+    T(rawValue: raw).orFailure("Can't parse '\(raw)'.\nPossible values: \(T.unionLiteral)")
+}

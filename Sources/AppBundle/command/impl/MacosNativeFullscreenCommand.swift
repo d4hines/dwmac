@@ -7,7 +7,7 @@ import Common
 ///
 /// The same applies to macos-native-minimize command
 struct MacosNativeFullscreenCommand: Command {
-    let args: MacosNativeFullscreenCmdArgs
+    let args: CmdFields
     /*conforms*/ var shouldResetClosedWindowsCache = false
 
     func run(_ env: CmdEnv, _ io: CmdIo) async throws -> Bool {
@@ -16,17 +16,17 @@ struct MacosNativeFullscreenCommand: Command {
             return io.err(noWindowIsFocused)
         }
         let prevState = try await window.isMacosFullscreen
-        let newState: Bool = switch args.toggle {
-            case .on: true
-            case .off: false
-            case .toggle: !prevState
+        let newState: Bool = switch args.str("toggle") {
+            case "on": true
+            case "off": false
+            default: !prevState
         }
         if newState == prevState {
-            if !args.failIfNoop {
+            if !args.bool("failIfNoop") {
                 io.err((newState ? "Already fullscreen. " : "Already not fullscreen. ") +
                     "Tip: use --fail-if-noop to exit with non-zero exit code")
             }
-            return !args.failIfNoop
+            return !args.bool("failIfNoop")
         }
         window.asMacWindow().setNativeFullscreen(newState)
         guard window.lean != nil else {

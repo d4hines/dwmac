@@ -12,7 +12,7 @@ Swift drives the model through text-based calls, so adding an op or a command do
   `Reply.render`). Input that doesn't parse leaves the state alone, with a failed reply
 * `dwmac_lean_state_preview state input`: the reply `exec` would give, without changing the state
 * `dwmac_lean_state_snapshot state`: the state, one record per line (see `snapshot`)
-* `dwmac_lean_state_query state input`: answer a question that doesn't change the state (see `query`)
+* `dwmac_lean_query input`: answer a question that doesn't need the state (see `query`)
 * `dwmac_lean_state_layout state showAll`: the layout's effects, one per line (see `Effect.render`)
 
 Whatever the input, the result is `State.exec` of some input (or the state unchanged), so `reachable_exec_inv` holds
@@ -262,8 +262,9 @@ def State.execCli (s : State) (fields : List String) : State × Reply :=
   match fields with
   | [windowId, workspace, stdin, raw] =>
     let env : Env := { windowId := if windowId == "-" then none else windowId.toNat?,
-                       workspace := if workspace == "-" then none else some workspace, stdin := items stdin }
-    match Cli.parseArgs (if raw.isEmpty then [] else raw.splitOn "\x1f") with
+                       workspace := if workspace == "-" then none else some workspace,
+                       stdin := (items stdin).map Cli.unescape }
+    match Cli.parseArgs (if raw.isEmpty then [] else (raw.splitOn "\x1f").map Cli.unescape) with
     | .cmd kind f => match s.cliCmd env kind f with
       | .ok c => s.exec (.cmd c)
       | .error e => (s, .fail e)
@@ -329,20 +330,28 @@ def _root_.DwmacCore.WindowKind.Kind.render : WindowKind.Kind → String
 /-- `windowKind <facts>` (see `parseFacts`): `<window/dialog/popup> <is dialog 0/1>`.
 `parse <command string>` and `parseArgs <args, \x1f separated>`: the parsed command (`Cli.Parsed.render`), then
 `args <args, \x1f separated>`, the arguments it was split into. The empty string for input that doesn't parse -/
-def State.query (_s : State) (input : String) : String :=
-  let args (l : List String) := "\nargs\t" ++ "\x1f".intercalate l
+def query (input : String) : String :=
+  let args (l : List String) := "\nargs\t" ++ "\x1f".intercalate (l.map Cli.escape)
+  -- `cmd <kind> <allowed in config 0/1> <run by Lean 0/1>`, then its fields
+  let render (p : Cli.Parsed) := match p with
+    | .cmd kind f =>
+      let allow := ((Cli.specOf? kind).map (·.allowInConfig)).getD true
+      "\n".intercalate (s!"cmd\t{kind}\t{b allow}\t{b (leanRunKinds.contains kind)}" ::
+        f.reverse.map fun (k, v) => s!"field\t{k}\t{v.render}")
+    | p => p.render
   match input.splitOn "\t" with
   | "windowKind" :: facts => match parseFacts facts with
     | some f => s!"{(WindowKind.kind f).render}\t{b (WindowKind.isDialog f)}"
     | none => ""
-  | ["parse", raw] => let (p, l) := Cli.parseString raw; p.render ++ args l
+  | ["parse", raw] => let (p, l) := Cli.parseString (Cli.unescape raw); render p ++ args l
   | ["parseArgs", raw] =>
-    let l := if raw.isEmpty then [] else raw.splitOn "\x1f"
-    (Cli.parseArgs l).render ++ args l
+    let l := if raw.isEmpty then [] else (raw.splitOn "\x1f").map Cli.unescape
+    render (Cli.parseArgs l) ++ args l
   | _ => ""
 
-@[export dwmac_lean_state_query]
-def stateQueryFfi (s : State) (input : String) : String := s.query input
+/-- Doesn't need the state, so Swift can ask from any thread -/
+@[export dwmac_lean_query]
+def queryFfi (input : String) : String := query input
 
 @[export dwmac_lean_state_snapshot]
 def stateSnapshotFfi (s : State) : String := s.snapshot

@@ -2,27 +2,26 @@ import AppKit
 import Common
 
 struct ConfigCommand: Command {
-    let args: ConfigCmdArgs
+    let args: CmdFields
     /*conforms*/ var shouldResetClosedWindowsCache = false
 
     func run(_ env: CmdEnv, _ io: CmdIo) -> Bool {
-        switch args.mode {
-            case .getKey(let key):
-                return getKey(io, args: args, key: key)
-            case .majorKeys:
-                let out = """
-                    .
-                    mode
-                    \(config.modes.keys.map { "mode.\($0).binding" }.joined(separator: "\n"))
-                    """
-                return io.out(out)
-            case .allKeys:
-                let configMap = buildConfigMap()
-                var allKeys: [String] = []
-                configMap.dumpAllKeysRecursive(path: ".", result: &allKeys)
-                return io.out(allKeys.joined(separator: "\n"))
-            case .configPath:
-                return io.out(configUrl.absoluteURL.path)
+        // Lean checked that exactly one of these is given
+        if let key = args.str("keyNameToGet") {
+            return getKey(io, args: args, key: key)
+        } else if args.bool("majorKeys") {
+            let out = """
+                .
+                mode
+                \(config.modes.keys.map { "mode.\($0).binding" }.joined(separator: "\n"))
+                """
+            return io.out(out)
+        } else if args.bool("allKeys") {
+            var allKeys: [String] = []
+            buildConfigMap().dumpAllKeysRecursive(path: ".", result: &allKeys)
+            return io.out(allKeys.joined(separator: "\n"))
+        } else {
+            return io.out(configUrl.absoluteURL.path)
         }
     }
 }
@@ -37,7 +36,7 @@ extension String {
     }
 }
 
-@MainActor private func getKey(_ io: CmdIo, args: ConfigCmdArgs, key: String) -> Bool {
+@MainActor private func getKey(_ io: CmdIo, args: CmdFields, key: String) -> Bool {
     let keyPath: [String]
     switch key.toKeyPath() {
         case .success(let _keyPath): keyPath = _keyPath
@@ -51,7 +50,7 @@ extension String {
         case .failure(let error):
             return io.err(error)
     }
-    if args.keys {
+    if args.bool("keys") {
         switch configMap {
             case .scalar(let scalar):
                 return io.err("--keys flag cannot be applied to scalar object '\(scalar)'")
@@ -61,7 +60,7 @@ extension String {
                 configMap = .array((0 ..< array.count).map { .scalar(.int($0)) })
         }
     }
-    if args.json {
+    if args.bool("json") {
         if let json = JSONEncoder.dwmacDefault.encodeToString(configMap) {
             return io.out(json)
         } else {

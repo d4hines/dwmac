@@ -15,7 +15,7 @@ final class CloseCommandTest: XCTestCase {
         assertEquals(focus.windowOrNil?.windowId, 1)
         assertEquals(focus.workspace.allWindows.count, 2)
 
-        try await CloseCommand(args: CloseCmdArgs(rawArgs: [])).run(.defaultEnv, .emptyStdin)
+        try await cmd("close").run(.defaultEnv, .emptyStdin)
 
         assertEquals(focus.windowOrNil?.windowId, 2)
         assertEquals(focus.workspace.allWindows.count, 1)
@@ -30,7 +30,7 @@ final class CloseCommandTest: XCTestCase {
         assertEquals(focus.windowOrNil?.windowId, 1)
         assertEquals(focus.workspace.allWindows.count, 2)
 
-        try await CloseCommand(args: CloseCmdArgs(rawArgs: []).copy(\.windowId, 2)).run(.defaultEnv, .emptyStdin)
+        try await cmd("close --window-id 2").run(.defaultEnv, .emptyStdin)
 
         assertEquals(focus.windowOrNil?.windowId, 1)
         assertEquals(focus.workspace.allWindows.count, 1)

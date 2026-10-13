@@ -2,7 +2,7 @@ import AppKit
 import Common
 
 struct ExecAndForgetCommand: Command {
-    let args: ExecAndForgetCmdArgs
+    let args: CmdFields
     /*conforms*/ var shouldResetClosedWindowsCache = false
 
     func run(_ env: CmdEnv, _ io: CmdIo) -> Bool {
@@ -11,7 +11,7 @@ struct ExecAndForgetCommand: Command {
         let process = Process()
         process.environment = config.execConfig.envVariables + env.asMap
         process.executableURL = URL(filePath: "/bin/bash")
-        process.arguments = ["-c", args.bashScript]
+        process.arguments = ["-c", args.str("bashScript") ?? ""]
         return Result { try process.run() }.isSuccess
     }
 }

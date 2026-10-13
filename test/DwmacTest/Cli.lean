@@ -83,6 +83,10 @@ def fields (raw : String) : Fields := match p raw with | .cmd _ f => f | _ => []
 
 -- Splitting command strings
 #guard (splitArgs "  foo   bar ").toOption == some ["foo", "bar"] && (splitArgs "foo 'bar baz'").toOption == some ["foo", "bar baz"]
+#guard ["echo foo", "echo 'foo'", "'echo' foo"].all fun s => (splitArgs s).toOption == some ["echo", "foo"]
+#guard (splitArgs "echo \"'\"").toOption == some ["echo", "'"] && (splitArgs "echo '\"'").toOption == some ["echo", "\""]
+#guard (splitArgs "  echo '  foo bar'").toOption == some ["echo", "  foo bar"]
+#guard (splitArgs "echo 'foo").toOption.isNone && (splitArgs "echo foo'").toOption.isNone
 #guard (match splitArgs "foo 'bar" with | .error e => e | .ok _ => "") == "Last quote ' isn't closed"
 #guard (parseString "exec-and-forget open -a Kitty").1 == .cmd "exec-and-forget" [("bashScript", .str " open -a Kitty")]
 
