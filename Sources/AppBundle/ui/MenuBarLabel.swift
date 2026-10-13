@@ -214,17 +214,17 @@ struct MenuBarLabel: View {
 @available(macOS 14, *)
 @MainActor
 private func renderOnCpu(_ content: some View) -> CGImage? {
+    // One pixel per point, like `ImageRenderer.cgImage` (whose scale defaults to 1): the caller shows the image at
+    // scale 2, which is what gives the label its size
     let renderer = ImageRenderer(content: content)
-    let scale: CGFloat = 2 // The label is shown at scale 2
     var image: CGImage? = nil
     renderer.render { size, draw in
-        let width = Int((size.width * scale).rounded(.up)), height = Int((size.height * scale).rounded(.up))
+        let width = Int(size.width.rounded(.up)), height = Int(size.height.rounded(.up))
         guard width > 0, height > 0, let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
         ) else { return }
-        context.scaleBy(x: scale, y: scale)
         draw(context)
         image = context.makeImage()
     }
