@@ -1,6 +1,5 @@
 import AppKit
 import Common
-import HotKey
 import OrderedCollections
 
 func getDefaultConfigUrlFromProject() -> URL {
@@ -51,6 +50,8 @@ struct Config: ConvenienceCopyable {
     var gaps: Gaps = .zero
     var workspaceToMonitorForceAssignment: [String: [MonitorDescription]] = [:]
     var modes: [String: Mode] = [:]
+    /// The bindings, for Lean (see `loadKeymap`)
+    var keymapText: String = ""
     var onWindowDetected: [WindowDetectedCallback] = []
     var scratchpads: [String: Scratchpad] = [:]
     var onModeChanged: [any Command] = []

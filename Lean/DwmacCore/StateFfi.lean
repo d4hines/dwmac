@@ -274,9 +274,43 @@ def State.execCli (s : State) (fields : List String) : State × Reply :=
     | .fail msg => (s, .fail msg)
   | _ => (s, .fail "dwmac bug: Lean can't parse a cli input")
 
+/-- The config's `mode` and `binding` lines (see `Config.render`), separated by `\x1f` -/
+def parseKeymap (text : String) : List (String × List Keys.Binding) :=
+  (text.splitOn "\x1f").foldl (fun modes line =>
+    match line.splitOn "\t" with
+    | ["mode", m] => modes ++ [(Cli.unescape m, [])]
+    | ["binding", m, raw, code, mods, desc, cmds] =>
+      let commands := if cmds.isEmpty then [] else (cmds.splitOn "\x1e").map Cli.unescape
+      let b : Keys.Binding :=
+        ⟨Cli.unescape raw, code.toNat?.getD 0, mods.toNat?.getD 0, Cli.unescape desc, commands⟩
+      modes.map fun (m', bs) => if m' == Cli.unescape m then (m', bs ++ [b]) else (m', bs)
+    | _ => modes) []
+
+/-- A key press or release: if it triggers a binding, its name and then its commands (escaped), one per line -/
+def keyReply : Option Keys.Binding → Reply
+  | some b => { out := Cli.escape b.desc :: b.commands.map Cli.escape }
+  | none => {}
+
 def State.execText (s : State) (input : String) : State × Reply :=
+  -- The keymap's lines have tabs of their own
+  if input.startsWith "keymap\t" then
+    ({ s with keymap := { s.keymap with modes := parseKeymap (input.drop "keymap\t".length).toString } }, {})
+  else
   match input.splitOn "\t" with
   | "cli" :: fields => s.execCli fields
+  | ["setMode", m] =>
+    let mode := if m.isEmpty then none else some m
+    ({ s with keymap := { s.keymap with mode } }, { out := if mode != s.keymap.mode then ["changed"] else [] })
+  | ["key", code, flags] =>
+    match code.toNat?, flags.toNat? with
+    | some code, some flags => (s, keyReply (s.keymap.lookup code flags))
+    | _, _ => (s, .fail s!"dwmac bug: Lean can't parse '{input}'")
+  | ["trigger", mode, raw] =>
+    match s.keymap.modes.lookup mode with
+    | none => (s, .fail s!"Mode '{mode}' doesn't exist. Available modes: {",".intercalate (s.keymap.modes.map (·.1))}")
+    | some bs => match bs.find? (·.raw == raw) with
+      | some b => (s, { out := b.commands.map Cli.escape })
+      | none => (s, .fail s!"Binding '{raw}' is not presented in mode '{mode}'")
   | _ =>
   match parseInput input with
   | some i => s.exec i

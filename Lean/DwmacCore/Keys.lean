@@ -66,4 +66,40 @@ def modifiersName (f : Nat) : String :=
   "-".intercalate (one lOption rOption option "alt" ++ one lControl rControl control "ctrl" ++
     one lCommand rCommand command "cmd" ++ one lShift rShift shift "shift")
 
+/-- A key binding: the key and modifiers that trigger it (macOS key code and `NSEvent.ModifierFlags`), and the
+commands it runs -/
+structure Binding where
+  /-- As written in the config, e.g. `alt-shift-j` -/
+  raw : String
+  keyCode : Nat
+  modifiers : Nat
+  /-- The modifiers and key, normalized: `alt-shift-j` and `shift-alt-j` are the same binding -/
+  desc : String
+  commands : List String
+deriving Repr, BEq, Inhabited
+
+/-! ## The keymap -/
+
+/-- The bindings of every mode, and the active mode: `none` while dwmac is disabled -/
+structure Keymap where
+  modes : List (String × List Binding) := []
+  mode : Option String := some "main"
+deriving Repr, Inhabited
+
+def bits (n : Nat) : Nat := (Nat.toDigits 2 n).count '1'
+
+/-- Whether `b` is triggered by key `code` with modifiers `flags` held: extra modifiers are allowed -/
+def Binding.triggeredBy (b : Binding) (code flags : Nat) : Bool := b.keyCode == code && has flags b.modifiers
+
+/-- Of the bindings `code` with `flags` triggers, the one with the most modifiers (the first, on a tie) -/
+def best (bs : List Binding) (code flags : Nat) : Option Binding :=
+  (bs.filter (·.triggeredBy code flags)).foldl
+    (fun acc b => match acc with
+      | some a => if bits b.modifiers > bits a.modifiers then some b else some a
+      | none => some b) none
+
+/-- The binding a key press triggers in the active mode -/
+def Keymap.lookup (k : Keymap) (code flags : Nat) : Option Binding :=
+  (k.mode.bind fun m => k.modes.lookup m).bind (best · code flags)
+
 end DwmacCore.Keys

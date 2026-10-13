@@ -14,17 +14,7 @@ namespace DwmacCore.Config
 
 open Toml (Value)
 
-/-- A key binding: the key and modifiers that trigger it (macOS key code and `NSEvent.ModifierFlags`), and the
-commands it runs -/
-structure Binding where
-  /-- As written in the config, e.g. `alt-shift-j` -/
-  raw : String
-  keyCode : Nat
-  modifiers : Nat
-  /-- The modifiers and key, normalized: `alt-shift-j` and `shift-alt-j` are the same binding -/
-  desc : String
-  commands : List String
-deriving Repr, BEq, Inhabited
+export Keys (Binding)
 
 /-- An `on-window-detected` callback -/
 structure Detected where

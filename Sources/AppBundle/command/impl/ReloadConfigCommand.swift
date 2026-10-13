@@ -29,9 +29,9 @@ struct ReloadConfigCommand: Command {
     switch readConfig(forceConfigUrl: forceConfigUrl) {
         case .success(let (parsedConfig, url)):
             if !dryRun {
-                resetHotKeys()
                 config = parsedConfig
                 configUrl = url
+                loadKeymap()
                 try await activateMode(activeMode)
                 syncStartAtLogin()
                 MessageModel.shared.message = nil

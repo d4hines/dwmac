@@ -57,22 +57,9 @@ final class ConfigTest: XCTestCase {
             """,
         )
         assertEquals(errors, [])
-        let lcmdA = HotkeyBinding([.command, .lCommand], .a, [cmd("focus next")], descriptionWithKeyNotation: "lcmd-a")
-        let rcmdA = HotkeyBinding([.command, .rCommand], .a, [cmd("focus prev")], descriptionWithKeyNotation: "rcmd-a")
-        let cmdA = HotkeyBinding(.command, .a, [cmd("focus next")], descriptionWithKeyNotation: "cmd-a")
-
-        assertEquals(
-            config.modes[mainModeId]?.bindings[lcmdA.descriptionWithKeyCode],
-            lcmdA,
-        )
-        assertEquals(
-            config.modes[mainModeId]?.bindings[rcmdA.descriptionWithKeyCode],
-            rcmdA,
-        )
-        assertEquals(
-            config.modes[mainModeId]?.bindings[cmdA.descriptionWithKeyCode],
-            cmdA,
-        )
+        assertEquals(bound(config, "lcmd-a"), ["focus next"])
+        assertEquals(bound(config, "rcmd-a"), ["focus prev"])
+        assertEquals(bound(config, "cmd-a"), ["focus next"])
     }
 
     func testQueryCantBeUsedInConfig() {
@@ -103,11 +90,8 @@ final class ConfigTest: XCTestCase {
             """,
         )
         assertEquals(errors, [])
-        let binding = HotkeyBinding(.option, .h, [cmd("focus next")])
-        assertEquals(
-            config.modes[mainModeId],
-            Mode(name: nil, bindings: [binding.descriptionWithKeyCode: binding]),
-        )
+        assertEquals(config.modes[mainModeId]?.bindings.keys.sorted(), ["alt-h"])
+        assertEquals(bound(config, "alt-h"), ["focus next"])
     }
 
     func testModesMustContainDefaultModeError() {
@@ -121,7 +105,7 @@ final class ConfigTest: XCTestCase {
             errors.descriptions,
             ["mode: Please specify \'main\' mode"],
         )
-        assertEquals(config.modes[mainModeId], nil)
+        XCTAssertNil(config.modes[mainModeId])
     }
 
     func testHotkeyParseError() {
@@ -140,11 +124,7 @@ final class ConfigTest: XCTestCase {
                 "mode.main.binding.alt-hh: Can\'t parse the key in \'alt-hh\' binding",
             ],
         )
-        let binding = HotkeyBinding(.option, .k, [cmd("focus prev")])
-        assertEquals(
-            config.modes[mainModeId],
-            Mode(name: nil, bindings: [binding.descriptionWithKeyCode: binding]),
-        )
+        assertEquals(config.modes[mainModeId]?.bindings.keys.sorted(), ["alt-k"])
     }
 
     func testPermanentWorkspaceNames() {
@@ -393,4 +373,10 @@ final class ConfigTest: XCTestCase {
             "gaps.inner.vertical[1].monitor: The table is expected to have a single key",
         ])
     }
+}
+
+/// The commands a main mode binding runs, as their descriptions
+@MainActor
+func bound(_ config: Config, _ notation: String) -> [String]? {
+    config.modes[mainModeId]?.bindings[notation]?.map(\.args.description)
 }

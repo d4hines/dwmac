@@ -1,4 +1,5 @@
 import DwmacCore.MasterStack
+import DwmacCore.Keys
 
 /-!
 # The window manager's state machine
@@ -161,6 +162,8 @@ structure State where
   seenFocus : Option WinId := none
   /-- The window dwmac last asked macOS to focus, and when (ms) -/
   focusAsked : Option (WinId × Nat) := none
+  /-- The config's key bindings and the active mode -/
+  keymap : Keys.Keymap := {}
 deriving Repr, Inhabited
 
 namespace State

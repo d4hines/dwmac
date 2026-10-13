@@ -1,7 +1,6 @@
 @testable import AppBundle
 import Common
 import Foundation
-import HotKey
 import XCTest
 
 let projectRoot: URL = {
@@ -70,11 +69,3 @@ func testParseCommandFail(_ command: String, msg expected: String) {
 @MainActor
 func cmd(_ raw: String) -> any Command { parseCommand(raw).cmdOrNil ?? dieT("Can't parse '\(raw)'") }
 
-extension HotkeyBinding {
-    init(_ modifiers: NSEvent.ModifierFlags, _ keyCode: Key, _ commands: [any Command]) {
-        let descriptionWithKeyNotation = modifiers.isEmpty
-            ? keyCode.toString()
-            : modifiers.toString() + "-" + keyCode.toString()
-        self.init(modifiers, keyCode, commands, descriptionWithKeyNotation: descriptionWithKeyNotation)
-    }
-}

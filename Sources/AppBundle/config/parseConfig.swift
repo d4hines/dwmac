@@ -1,6 +1,5 @@
 import AppKit
 import Common
-import HotKey
 import OrderedCollections
 
 @MainActor
@@ -39,6 +38,7 @@ func readConfig(forceConfigUrl: URL? = nil) -> Result<(Config, URL), String> {
     var config = Config()
     var errors: [String] = []
     var env: [String: String] = [:]
+    var keymap: [String] = []
     func list(_ raw: String) -> [String] {
         raw.isEmpty ? [] : raw.split(separator: "\u{1e}", omittingEmptySubsequences: false).map { String($0).leanUnescaped }
     }
@@ -99,12 +99,12 @@ func readConfig(forceConfigUrl: URL? = nil) -> Result<(Config, URL), String> {
                 let name = f[1].leanUnescaped
                 config.scratchpads[name] = Scratchpad(name: name, appId: f[2].leanUnescaped,
                                                       width: Double(f[3]) ?? 0.9, height: Double(f[4]) ?? 0.9)
-            case "mode": config.modes[f[1].leanUnescaped] = .zero
+            case "mode":
+                config.modes[f[1].leanUnescaped] = .zero
+                keymap.append(String(line))
             case "binding":
-                guard let key = Key(carbonKeyCode: UInt32(f[3]) ?? 0) else { break }
-                let binding = HotkeyBinding(NSEvent.ModifierFlags(rawValue: UInt(f[4]) ?? 0), key, commands(f[6]),
-                                            descriptionWithKeyNotation: f[2].leanUnescaped, descriptionWithKeyCode: f[5].leanUnescaped)
-                config.modes[f[1].leanUnescaped]?.bindings[binding.descriptionWithKeyCode] = binding
+                config.modes[f[1].leanUnescaped]?.bindings[f[2].leanUnescaped] = commands(f[6])
+                keymap.append(String(line))
             case "detected":
                 config.onWindowDetected.append(WindowDetectedCallback(
                     matcher: WindowDetectedCallbackMatcher(
@@ -118,5 +118,6 @@ func readConfig(forceConfigUrl: URL? = nil) -> Result<(Config, URL), String> {
         }
     }
     config.execConfig = ExecConfig(envVariables: env)
+    config.keymapText = keymap.joined(separator: "\u{1f}")
     return (config, errors)
 }

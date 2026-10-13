@@ -13,8 +13,7 @@ final class ModAliasTest: XCTestCase {
             """,
         )
         XCTAssertEqual(errors, [])
-        let binding = HotkeyBinding([.command, .option], .e, [cmd("focus next")])
-        XCTAssertEqual(config.modes[mainModeId]?.bindings[binding.descriptionWithKeyCode], binding)
+        XCTAssertEqual(bound(config, "mod-e"), ["focus next"])
     }
 
     func testModAliasWithMultipleModifiers() {
@@ -26,8 +25,7 @@ final class ModAliasTest: XCTestCase {
             """,
         )
         XCTAssertEqual(errors, [])
-        let binding = HotkeyBinding([.command, .option, .control, .shift], .e, [cmd("focus next")])
-        XCTAssertEqual(config.modes[mainModeId]?.bindings[binding.descriptionWithKeyCode], binding)
+        XCTAssertEqual(bound(config, "mod-e"), ["focus next"])
     }
 
     func testNoModAlias() {
@@ -38,8 +36,7 @@ final class ModAliasTest: XCTestCase {
             """,
         )
         XCTAssertEqual(errors, [])
-        let binding = HotkeyBinding(.option, .e, [cmd("focus next")])
-        XCTAssertEqual(config.modes[mainModeId]?.bindings[binding.descriptionWithKeyCode], binding)
+        XCTAssertEqual(bound(config, "alt-e"), ["focus next"])
     }
 
     func testUnknownModAlias() {

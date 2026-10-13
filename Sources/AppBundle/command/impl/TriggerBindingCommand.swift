@@ -6,18 +6,9 @@ struct TriggerBindingCommand: Command {
     /*conforms*/ var shouldResetClosedWindowsCache = false
 
     func run(_ env: CmdEnv, _ io: CmdIo) async throws -> Bool {
-        let modeId = args.str("_mode") ?? ""
-        let bindingName = args.str("binding") ?? ""
-        return if let mode = config.modes[modeId] {
-            if let binding = mode.bindings.values.first(where: { $0.descriptionWithKeyNotation == bindingName }) {
-                // refreshSession is not needed since commands are already run in refreshSession
-                try await binding.commands.runCmdSeq(env, io)
-            } else {
-                io.err("Binding '\(bindingName)' is not presented in mode '\(modeId)'")
-            }
-        } else {
-            io.err("Mode '\(modeId)' doesn't exist. " +
-                "Available modes: \(config.modes.keys.joined(separator: ","))")
-        }
+        let reply = LeanState.runRaw("trigger\t\((args.str("_mode") ?? "").leanEscaped)\t\((args.str("binding") ?? "").leanEscaped)")
+        guard reply.ok else { return io.err(reply.err.joined(separator: "\n")) }
+        // refreshSession is not needed since commands are already run in refreshSession
+        return try await reply.out.compactMap { parseCommand($0.leanUnescaped).cmdOrNil }.runCmdSeq(env, io)
     }
 }
