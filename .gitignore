@@ -2,3 +2,5 @@
 # Swift package manager
 /.build
 /.swiftpm
+# Lean
+/.lake

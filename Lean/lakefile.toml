@@ -1,5 +1,0 @@
-name = "DwmacCore"
-defaultTargets = ["DwmacCore"]
-
-[[lean_lib]]
-name = "DwmacCore"

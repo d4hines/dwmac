@@ -1,0 +1,18 @@
+name = "dwmac"
+# `lake build` builds all three, so it checks every proof and test. Only DwmacCore is compiled into the app
+defaultTargets = ["DwmacCore", "DwmacProofs", "DwmacTest"]
+
+# The code that ships: the state machine, commands, layout and the C entry points
+[[lean_lib]]
+name = "DwmacCore"
+srcDir = "Lean"
+
+# The theorems about it
+[[lean_lib]]
+name = "DwmacProofs"
+srcDir = "proofs"
+
+# Scenarios checked with #guard
+[[lean_lib]]
+name = "DwmacTest"
+srcDir = "test"

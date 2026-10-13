@@ -10,7 +10,7 @@ void lean_initialize_runtime_module(void);
 void lean_initialize_thread(void);
 void lean_io_mark_end_initialization(void);
 void lean_io_result_show_error(lean_object *result);
-lean_object *initialize_DwmacCore_DwmacCore(uint8_t builtin);
+lean_object *initialize_dwmac_DwmacCore(uint8_t builtin);
 lean_object *dwmac_lean_state_init(lean_object *scratchpads);
 lean_object *dwmac_lean_state_exec(lean_object *state, lean_object *input);
 lean_object *dwmac_lean_state_preview(lean_object *state, lean_object *input);
@@ -22,7 +22,7 @@ static _Thread_local bool thread_ready = false;
 
 static void initialize_runtime(void) {
     lean_initialize_runtime_module();
-    lean_object *result = initialize_DwmacCore_DwmacCore(1);
+    lean_object *result = initialize_dwmac_DwmacCore(1);
     if (!lean_io_result_is_ok(result)) {
         lean_io_result_show_error(result);
         abort();

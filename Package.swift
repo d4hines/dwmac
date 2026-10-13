@@ -82,6 +82,7 @@ let package = Package(
             dependencies: [
                 .target(name: "AppBundle"),
             ],
+            path: "test/AppBundleTests",
         ),
     ],
 )

@@ -15,9 +15,9 @@ Every command and event is an `Op`. `step` applies one in three stages:
    `FrozenFocus.live`)
 3. `hideUnfocused`, which sends every scratchpad that doesn't have focus back to its home
 
-`ModelProofs.lean` proves `step` preserves `Inv`, which includes the property the scratchpad fix was about: a
-scratchpad home is never shown, and a scratchpad window outside its home is on the focused workspace and its
-scratchpad has focus (so macOS keeps it on top).
+`proofs/DwmacProofs/Model.lean` proves `step` preserves `Inv`, which includes the property the scratchpad fix was
+about: a scratchpad home is never shown, and a scratchpad window outside its home is on the focused workspace and
+its scratchpad has focus (so macOS keeps it on top).
 
 The state also holds what the layout needs (`Layout.lean` turns it into frames): each workspace's layout and mfact,
 fullscreen windows, and the monitors' geometry.

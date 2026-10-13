@@ -4,7 +4,7 @@ import XCTest
 
 final class AxWindowKindTest: XCTestCase {
     func test() throws {
-        try checkAxDumpsRecursive(projectRoot.appending(path: "./axDumps"))
+        try checkAxDumpsRecursive(projectRoot.appending(path: "test/axDumps"))
     }
 }
 
