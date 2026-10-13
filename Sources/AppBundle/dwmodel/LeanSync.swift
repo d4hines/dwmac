@@ -57,13 +57,15 @@ import Common
                 padded: monitor.visibleRectPaddedByOuterGaps,
                 gapH: gaps.inner.horizontal,
                 gapV: gaps.inner.vertical,
+                name: monitor.name,
             ))
         }),
-        .layoutConfigChanged(
+        .settingsChanged(
             defaultLayout: config.defaultRootContainerLayout,
             defaultMfactPermille: Int((config.defaultMfact * 1000).rounded()),
             masterAtStop: config.masterPosition == .right,
             centerFloating: config.centerFloatingWindows,
+            persistent: Array(config.persistentWorkspaces),
         ),
     ]
     for (index, op) in environment.enumerated() where lastEnvironment.getOrNil(atIndex: index) != op {
@@ -80,6 +82,19 @@ func leanApply(_ op: LeanOp) -> LeanSnapshot {
     let snapshot = LeanState.apply(op)
     project(snapshot, before: before)
     return snapshot
+}
+
+/// Run a command, make Swift's state match the result, and pass on its output. The caller carries out the reply's
+/// effects
+@MainActor
+func leanRun(_ cmd: LeanCmd, _ io: CmdIo) -> LeanReply {
+    leanSyncEnvironment()
+    let before = LeanState.last
+    let reply = LeanState.run(cmd)
+    project(LeanState.last, before: before)
+    io.out(reply.out)
+    io.err(reply.err)
+    return reply
 }
 
 /// Pick up monitor and config changes

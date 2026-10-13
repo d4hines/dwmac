@@ -2,8 +2,9 @@ import AppKit
 import Common
 
 // Scratchpads (xmonad's NamedScratchpad). Lean decides where their windows live (Lean/DwmacCore/Model.lean): in the
-// scratchpad's hidden home workspace, or floating on the focused workspace while the scratchpad has focus. It proves a
-// home is never shown. This file does the physical side: launching apps, and sizing and placing summoned windows.
+// scratchpad's hidden home workspace, or floating on the focused workspace while the scratchpad has focus, and what
+// `scratchpad` does (Command.lean). It proves a home is never shown. This file does the physical side: launching
+// apps, and sizing and placing summoned windows.
 
 let scratchpadHomePrefix = "scratchpad:"
 
@@ -13,12 +14,6 @@ extension Workspace {
 
 extension Scratchpad {
     @MainActor var home: Workspace { Workspace.get(byName: scratchpadHomePrefix + name) }
-
-    /// Windows that dwmac lays out (popups, minimized, native fullscreen and hidden-app windows are skipped)
-    @MainActor var windows: [Window] {
-        Workspace.all.flatMap { $0.children.filterIsInstance(of: Window.self) }
-            .filter { $0.app.rawAppBundleId == appId }
-    }
 }
 
 @MainActor func scratchpadOwning(_ window: Window) -> Scratchpad? {
@@ -26,20 +21,19 @@ extension Scratchpad {
 }
 
 @MainActor
-func toggleScratchpad(_ scratchpad: Scratchpad, _ io: CmdIo) async throws -> Bool {
-    let workspace = focus.workspace
-    let windows = scratchpad.windows
-    if windows.isEmpty {
+func toggleScratchpad(_ name: String, _ io: CmdIo) async throws -> Bool {
+    // A window about to be summoned is resized while it's still hidden
+    for case .prepareSummon(let id) in LeanState.preview(.scratchpad(name)).effects {
+        if let window = Window.get(byId: id), let scratchpad = scratchpadOwning(window) {
+            try await resizeWhileHidden(window, to: summonedFrame(scratchpad, on: focus.workspace).size)
+        }
+    }
+    let reply = leanRun(.scratchpad(name), io)
+    for case .launch(let appId) in reply.effects {
         // Lean summons the first window when it appears
-        leanApply(.toggleScratchpad(scratchpad.name))
-        return launchScratchpad(scratchpad, io)
+        if !launchApp(appId, scratchpad: name, io) { return false }
     }
-    if !windows.contains(where: { $0.nodeWorkspace == workspace }) {
-        // About to be summoned: resize while it's still hidden
-        try await resizeWhileHidden(primaryWindow(windows), to: summonedFrame(scratchpad, on: workspace).size)
-    }
-    leanApply(.toggleScratchpad(scratchpad.name))
-    return true
+    return reply.ok
 }
 
 /// Called after Lean moved scratchpad windows out of their home onto `workspace`: put the focused one (the primary)
@@ -109,9 +103,9 @@ func hiddenTopLeft(resizing hidden: Rect, to size: CGSize, monitors: [Rect]) -> 
 }
 
 @MainActor
-private func launchScratchpad(_ scratchpad: Scratchpad, _ io: CmdIo) -> Bool {
-    guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: scratchpad.appId) else {
-        return io.err("Can't find app '\(scratchpad.appId)' of scratchpad '\(scratchpad.name)'")
+private func launchApp(_ appId: String, scratchpad: String, _ io: CmdIo) -> Bool {
+    guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: appId) else {
+        return io.err("Can't find app '\(appId)' of scratchpad '\(scratchpad)'")
     }
     // If the app is already running without windows, macOS sends it a "reopen" event, which makes most apps
     // open a new window

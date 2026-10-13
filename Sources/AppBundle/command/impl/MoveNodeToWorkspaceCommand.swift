@@ -5,38 +5,11 @@ struct MoveNodeToWorkspaceCommand: Command {
     /*conforms*/ let shouldResetClosedWindowsCache: Bool = true
 
     func run(_ env: CmdEnv, _ io: CmdIo) -> Bool {
-        guard let target = args.resolveTargetOrReportError(env, io) else { return false }
-        guard let window = target.windowOrNil else { return io.err(noWindowIsFocused) }
-        let subjectWs = window.nodeWorkspace
-        let targetWorkspace: Workspace
-        switch args.target.val {
-            case .relative(let nextPrev):
-                guard let subjectWs else { return io.err("Window \(window.windowId) doesn't belong to any workspace") }
-                let ws = getNextPrevWorkspace(
-                    current: subjectWs,
-                    isNext: nextPrev == .next,
-                    wrapAround: args.wrapAround,
-                    stdin: args.useStdin ? io.readStdin() : nil,
-                    target: target,
-                )
-                guard let ws else { return io.err("Can't resolve next or prev workspace") }
-                targetWorkspace = ws
-            case .direct(let name):
-                targetWorkspace = Workspace.get(byName: name.raw)
+        let to: LeanCmd.WsTo = switch args.target.val {
+            case .relative(let nextPrev): .relative(nextPrev, wrap: args.wrapAround, among: args.useStdin ? stdinWorkspaces(io) : nil)
+            case .direct(let name): .name(name.raw)
         }
-        return moveWindowToWorkspace(window, targetWorkspace, io, focusFollowsWindow: args.focusFollowsWindow, failIfNoop: args.failIfNoop)
+        let cmd = LeanCmd.moveNodeToWorkspace(args.leanTarget(env), to, focusFollows: args.focusFollowsWindow, failIfNoop: args.failIfNoop)
+        return leanRun(cmd, io).ok
     }
-}
-
-@MainActor
-func moveWindowToWorkspace(_ window: Window, _ targetWorkspace: Workspace, _ io: CmdIo, focusFollowsWindow: Bool, failIfNoop: Bool, index: Int = INDEX_BIND_LAST) -> Bool {
-    if window.nodeWorkspace == targetWorkspace {
-        if !failIfNoop {
-            io.err("Window '\(window.windowId)' already belongs to workspace '\(targetWorkspace.name)'. Tip: use --fail-if-noop to exit with non-zero code")
-        }
-        return !failIfNoop
-    }
-    // Both floating and tiling windows are bound to the workspace directly now.
-    window.bind(to: targetWorkspace, index: index)
-    return focusFollowsWindow ? window.focusWindow() : true
 }

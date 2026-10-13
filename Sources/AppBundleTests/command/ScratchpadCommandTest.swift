@@ -21,13 +21,6 @@ final class ScratchpadCommandTest: XCTestCase {
         XCTAssertNotNil(parseCommand("scratchpad signal").cmdOrNil)
     }
 
-    func testUndeclared() async throws {
-        let result = try await ScratchpadCommand(args: ScratchpadCmdArgs(rawArgs: []).copy(\.name, .initialized("nope")))
-            .run(.defaultEnv, .emptyStdin)
-        assertEquals(result.exitCode, 1)
-        assertEquals(result.stderr, ["Scratchpad 'nope' isn't declared. Declare it in the config with [scratchpad.nope]"])
-    }
-
     func testDetectedWindowGoesHome() {
         let window = TestWindow.new(id: 1, parent: focus.workspace)
         assertEquals(window.nodeWorkspace, scratchpad.home)
@@ -65,72 +58,6 @@ final class ScratchpadCommandTest: XCTestCase {
         assertEquals(window.nodeWorkspace, scratchpad.home)
         assertEquals(focus.workspace, workspace)
         assertEquals(focus.windowOrNil, tiled)
-    }
-
-    func testHidesWhenFocusLeaves() async throws {
-        let workspace = focus.workspace
-        let tiled = TestWindow.new(id: 1, parent: workspace, app: .other)
-        _ = tiled.focusWindow()
-        let window = TestWindow.new(id: 2, parent: workspace)
-        window.bindAsFloatingWindow(to: scratchpad.home)
-        try await toggle()
-
-        assertEquals(window.nodeWorkspace, workspace)
-
-        // Focus moves to another window: the scratchpad goes home
-        _ = tiled.focusWindow()
-        assertEquals(window.nodeWorkspace, scratchpad.home)
-        assertEquals(focus.windowOrNil, tiled)
-    }
-
-    func testSummonFromAnotherWorkspace() async throws {
-        let window = TestWindow.new(id: 1, parent: Workspace.get(byName: "a"))
-        window.isFloating = true
-        let workspace = focus.workspace
-        try await toggle()
-        assertEquals(window.nodeWorkspace, workspace)
-        assertEquals(focus.windowOrNil, window)
-    }
-
-    func testNewWindowJoinsSummonedSiblings() async throws {
-        _ = TestWindow.new(id: 1, parent: focus.workspace)
-        try await toggle()
-        let dialog = TestWindow.new(id: 2, parent: Workspace.get(byName: "a"))
-        assertEquals(dialog.nodeWorkspace, focus.workspace)
-        XCTAssertTrue(dialog.isFloating)
-    }
-
-    func testNativeFocusSummonsInsteadOfShowingHome() {
-        let workspace = focus.workspace
-        let tiled = TestWindow.new(id: 1, parent: workspace, app: .other)
-        _ = tiled.focusWindow()
-        let window = TestWindow.new(id: 2, parent: workspace)
-        window.bindAsFloatingWindow(to: scratchpad.home)
-
-        // macOS focuses the hidden window (Cmd-Tab): it comes to the workspace, the home never becomes visible
-        XCTAssertTrue(window.focusWindow())
-        assertEquals(window.nodeWorkspace, workspace)
-        XCTAssertTrue(window.isFloating)
-        assertEquals(focus.workspace, workspace)
-        assertEquals(focus.windowOrNil, window)
-        XCTAssertFalse(scratchpad.home.isVisible)
-    }
-
-    func testHomeIsNeverShown() {
-        let workspace = focus.workspace
-        let home = scratchpad.home
-        XCTAssertFalse(home.focusWorkspace())
-        assertEquals(focus.workspace, workspace)
-        XCTAssertFalse(home.isVisible)
-        XCTAssertFalse(workspace.workspaceMonitor.setActiveWorkspace(home))
-        XCTAssertFalse(home.isVisible)
-    }
-
-    func testHomeIsSkippedByNextPrev() async throws {
-        _ = TestWindow.new(id: 1, parent: focus.workspace)
-        Workspace.get(byName: "a").apply { TestWindow.new(id: 2, parent: $0, app: .other) }
-        let next = getNextPrevWorkspace(current: focus.workspace, isNext: true, wrapAround: true, stdin: nil, target: focus)
-        XCTAssertFalse(next.orDie().isScratchpadHome)
     }
 
     func testParseConfig() {

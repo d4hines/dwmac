@@ -2,7 +2,8 @@
 
 dwmac's state and decisions live here, in Lean, with proofs of the properties the window manager relies on. Lean
 compiles them to C, which the `CDwmacCore` Swift target links (see `Sources/CDwmacCore`). Swift is the shell
-around it: it turns AX events and commands into `Op`s, and carries out the `Effect`s Lean computes with AX calls.
+around it: it turns AX events into `Op`s and CLI commands into `Cmd`s, prints Lean's replies, and carries out the
+`Effect`s Lean computes with AX calls.
 
 | File | What | Theorems |
 |---|---|---|
@@ -11,8 +12,10 @@ around it: it turns AX events and commands into `Op`s, and carries out the `Effe
 | `DwmacCore/Model.lean` | The state machine: monitors, workspaces, windows, focus, scratchpads, layout settings, and an `Op` per command or event | |
 | `DwmacCore/ModelProofs.lean` | Its invariant, preserved by every op | `reachable_inv`, `home_never_shown`, `scratchpad_topmost_or_hidden` |
 | `DwmacCore/Layout.lean` | The layout as effects: tile, float, hide in a corner, unhide | `layout_shows_visible`, `layout_never_shows_home` |
+| `DwmacCore/Command.lean` | The CLI commands (`focus`, `workspace`, `swap`, `scratchpad`, ...): each is planned as a list of ops plus a reply | `exec_inv`, `reachable_exec_inv`, `layout_never_shows_home_exec` |
 | `DwmacCore/StateFfi.lean` | The text protocol and `@[export]`ed C entry points | |
 | `DwmacCore/ModelTest.lean` | Scenarios, checked with `#guard` at build time | |
+| `DwmacCore/CommandTest.lean` | Each command's behaviour and messages, checked with `#guard` at build time | |
 
 The pipeline:
 
@@ -21,9 +24,10 @@ Lean/DwmacCore/*.lean ──lake build──▶ .lake/build/ir/*.c ──copy-le
                      (checks proofs)                                              │
 Sources/CDwmacCore/shim.c (runtime init, holds the state) ◀────────────────────────┘
           ▲
-Sources/AppBundle/dwmodel/LeanState.swift (ops, snapshots, effects)
+Sources/AppBundle/dwmodel/LeanState.swift (ops, commands, replies, snapshots, effects)
           ▲
 Sources/AppBundle/dwmodel/LeanSync.swift (Swift events → ops, snapshot → Swift's tree)
+Sources/AppBundle/command/impl/*.swift (parse arguments → `leanRun`)
 Sources/AppBundle/layout/WorkspaceLayout.swift (effects → AX calls)
 ```
 

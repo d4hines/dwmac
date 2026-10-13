@@ -25,10 +25,10 @@ func setUpWorkspacesForTests() {
     config.modes = [mainModeId: Mode(name: nil, bindings: [:])]
     config.persistentWorkspaces = []
 
-    for workspace in Workspace.all {
-        for child in workspace.children {
-            child.unbindFromParent()
-        }
+    // Until none are left: Lean may move a window to a workspace already emptied (the config change above evicts
+    // scratchpad windows from their homes to the focused workspace)
+    while let child = Workspace.all.lazy.flatMap(\.children).first {
+        child.unbindFromParent()
     }
     leanResetForTests()
     check(Workspace.get(byName: "setUpWorkspacesForTests").focusWorkspace())

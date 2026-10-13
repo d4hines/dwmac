@@ -5,3 +5,5 @@ import DwmacCore.ModelTest
 import DwmacCore.ModelProofs
 import DwmacCore.StateFfi
 import DwmacCore.Layout
+import DwmacCore.Command
+import DwmacCore.CommandTest

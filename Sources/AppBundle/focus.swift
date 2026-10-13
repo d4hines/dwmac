@@ -118,9 +118,13 @@ extension Workspace {
 @MainActor var prevFocusedWorkspaceDate: Date = .distantPast
 @MainActor var prevFocusedWorkspace: Workspace? { _prevFocusedWorkspaceName.map { Workspace.get(byName: $0) } }
 
-// Used by focus-back-and-forth
-@MainActor var _prevFocus: FrozenFocus? = nil
-@MainActor var prevFocus: LiveFocus? { _prevFocus?.live.takeIf { $0 != focus } }
+/// The focus before the last change (Lean keeps it, for focus-back-and-forth)
+@MainActor var prevFocus: LiveFocus? {
+    let snapshot = LeanState.last
+    guard let workspace = snapshot.prevWorkspace else { return nil }
+    let frozen = FrozenFocus(windowId: snapshot.prevWindow, workspaceName: workspace, monitorId: 0)
+    return frozen.live.takeIf { $0 != focus }
+}
 
 @MainActor private var onFocusChangedRecursionGuard = false
 // Should be called in refreshSession
@@ -134,7 +138,6 @@ extension Workspace {
     var hasFocusedWorkspaceChanged = false
     var hasFocusedMonitorChanged = false
     if frozenFocus != _lastKnownFocus {
-        _prevFocus = _lastKnownFocus
         hasFocusChanged = true
     }
     if frozenFocus.workspaceName != _lastKnownFocus.workspaceName {

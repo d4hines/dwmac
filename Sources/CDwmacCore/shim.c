@@ -12,7 +12,8 @@ void lean_io_mark_end_initialization(void);
 void lean_io_result_show_error(lean_object *result);
 lean_object *initialize_DwmacCore_DwmacCore(uint8_t builtin);
 lean_object *dwmac_lean_state_init(lean_object *scratchpads);
-lean_object *dwmac_lean_state_step(lean_object *state, lean_object *op);
+lean_object *dwmac_lean_state_exec(lean_object *state, lean_object *input);
+lean_object *dwmac_lean_state_preview(lean_object *state, lean_object *input);
 lean_object *dwmac_lean_state_snapshot(lean_object *state);
 lean_object *dwmac_lean_state_layout(lean_object *state, uint8_t show_all);
 
@@ -50,16 +51,30 @@ void dwmac_state_init(const char *scratchpads) {
     state = dwmac_lean_state_init(lean_mk_string(scratchpads));
 }
 
-void dwmac_state_step(const char *op) {
-    ensure_ready();
-    if (!state) dwmac_state_init("");
-    state = dwmac_lean_state_step(state, lean_mk_string(op)); // Both arguments are consumed
-}
-
 static char *take_string(lean_object *str) {
     char *copy = strdup(lean_string_cstr(str));
     lean_dec_ref(str);
     return copy;
+}
+
+char *dwmac_state_exec(const char *input) {
+    ensure_ready();
+    if (!state) dwmac_state_init("");
+    lean_object *result = dwmac_lean_state_exec(state, lean_mk_string(input)); // Both arguments are consumed
+    // A pair: (state, reply)
+    state = lean_ctor_get(result, 0);
+    lean_object *reply = lean_ctor_get(result, 1);
+    lean_inc_ref(state);
+    lean_inc_ref(reply);
+    lean_dec_ref(result);
+    return take_string(reply);
+}
+
+char *dwmac_state_preview(const char *input) {
+    ensure_ready();
+    if (!state) dwmac_state_init("");
+    lean_inc_ref(state); // Consumed
+    return take_string(dwmac_lean_state_preview(state, lean_mk_string(input)));
 }
 
 char *dwmac_state_snapshot(void) {

@@ -752,7 +752,8 @@ theorem raw_struct {s : State} (hinv : Inv s) (op : Op) : Struct (s.raw op) := b
     · exact h
   | setParked id parked => exact mapWins_struct h _ _
   | geometryChanged geometry => exact h.congr rfl rfl rfl rfl
-  | layoutConfigChanged cfg => exact h.congr rfl rfl rfl rfl
+  | settingsChanged cfg => exact h.congr rfl rfl rfl rfl
+  | setLastNonMaster ws id => exact h.congr rfl rfl rfl rfl
 
 /-! ## The theorems -/
 

@@ -75,7 +75,7 @@ def placeWs (s : State) (ws : WsName) (mon : MonId) (g : Geom) : List Effect :=
   -- One point shorter than the workspace, as dwmac always did
   let tiles := masterStack
     { w := g.padded.w, h := g.padded.h - 1, gapH := g.gapH, gapV := g.gapV, mfactPermille := p.mfactPermille,
-      orientation := p.orientation, masterPosition := if s.layoutCfg.masterAtStop then .stop else .start }
+      orientation := p.orientation, masterPosition := if s.settings.masterAtStop then .stop else .start }
     tiled.length
   let place (w : Win) (r : Option Rect) : Option Effect :=
     match full with
@@ -84,7 +84,7 @@ def placeWs (s : State) (ws : WsName) (mon : MonId) (g : Geom) : List Effect :=
     <|> r.map fun r => .tile w.id ⟨g.padded.x + r.x, g.padded.y + r.y, r.w, r.h⟩ g.padded false
   let tileFx := (tiled.zip tiles).filterMap fun (w, r) => place w (some r)
   let floatFx := (wins.filter (fun w => w.floating && !w.parked)).map fun w =>
-    (place w none).getD (.float w.id mon g.visible s.layoutCfg.centerFloating)
+    (place w none).getD (.float w.id mon g.visible s.settings.centerFloating)
   wins.map (fun w => .unhide w.id g.rect (w.floating && !w.parked)) ++ tileFx ++ floatFx
 
 /-- Hide `ws`'s windows in a corner of its monitor -/
@@ -156,15 +156,20 @@ theorem layout_shows_visible (s : State) :
 
 end State
 
+/-- In a state with the invariant, the layout never puts a window that's in a scratchpad's home on screen -/
+theorem State.layout_hides_homes {s : State} (hinv : Inv s) :
+    ∀ e ∈ s.layout false, e.shows = true → ∀ w ∈ s.windows, w.id = e.target → w.ws.isHome = false := by
+  intro e he hs w hw hid
+  obtain ⟨w', hw', hid', hvis⟩ := s.layout_shows_visible e he hs
+  have := nodup_map_inj hinv.windows.idsNodup hw hw' (hid.trans hid'.symm)
+  subst this
+  exact hinv.screens.noHome _ hvis
+
 /-- **A hidden scratchpad stays hidden**: in every state dwmac can reach, the layout never puts a window that's in a
 scratchpad's home on screen -/
 theorem layout_never_shows_home (scratchpads : List Scratchpad) (ops : List State.Op) :
     let s := ops.foldl State.step (State.init scratchpads)
-    ∀ e ∈ s.layout false, e.shows = true → ∀ w ∈ s.windows, w.id = e.target → w.ws.isHome = false := by
-  intro s e he hs w hw hid
-  obtain ⟨w', hw', hid', hvis⟩ := s.layout_shows_visible e he hs
-  have := nodup_map_inj (reachable_inv scratchpads ops).windows.idsNodup hw hw' (hid.trans hid'.symm)
-  subst this
-  exact home_never_shown scratchpads ops _ hvis
+    ∀ e ∈ s.layout false, e.shows = true → ∀ w ∈ s.windows, w.id = e.target → w.ws.isHome = false :=
+  State.layout_hides_homes (reachable_inv scratchpads ops)
 
 end DwmacCore.Model

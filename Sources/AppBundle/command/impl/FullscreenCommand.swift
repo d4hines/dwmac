@@ -6,23 +6,13 @@ struct FullscreenCommand: Command {
     /*conforms*/ var shouldResetClosedWindowsCache = false
 
     func run(_ env: CmdEnv, _ io: CmdIo) -> Bool {
-        guard let target = args.resolveTargetOrReportError(env, io) else { return false }
-        guard let window = target.windowOrNil else {
-            return io.err(noWindowIsFocused)
+        let toggle = switch args.toggle {
+            case .on: "on"
+            case .off: "off"
+            case .toggle: "toggle"
         }
-        let newState: Bool = switch args.toggle {
-            case .on: true
-            case .off: false
-            case .toggle: !window.isFullscreen
-        }
-        if newState == window.isFullscreen {
-            io.err((newState ? "Already fullscreen. " : "Already not fullscreen. ") +
-                "Tip: use --fail-if-noop to exit with non-zero code")
-            return !args.failIfNoop
-        }
-        // Lean also makes it its workspace's most recent window, the one shown fullscreen
-        leanApply(.setFullscreen(window.windowId, on: newState, noOuterGaps: args.noOuterGaps))
-        return true
+        let cmd = LeanCmd.fullscreen(args.leanTarget(env), toggle, noOuterGaps: args.noOuterGaps, failIfNoop: args.failIfNoop)
+        return leanRun(cmd, io).ok
     }
 }
 

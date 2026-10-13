@@ -1,4 +1,3 @@
-import DwmacCore.Layout
 import DwmacCore.StateFfi
 
 /-! Scenarios, checked at build time -/
@@ -79,7 +78,7 @@ def tiles (w h n : Nat) (o : Orientation := .h) (pos : MasterPosition := .start)
 #guard (tiles 100 100 50).length == 50 && (tiles 100 100 50).all fun r => r.x + r.w ≤ 100 && r.y + r.h ≤ 100
 
 -- Layout: one 1920x1080 monitor, 10pt gaps
-def geom : Geom := let r : IRect := ⟨0, 0, 1920, 1080⟩; ⟨r, r, r, 10, 10⟩
+def geom : Geom := let r : IRect := ⟨0, 0, 1920, 1080⟩; ⟨r, r, r, 10, 10, "Built-in"⟩
 def laidOut (ops : List Op) : List Effect := (run (.geometryChanged [(0, geom)] :: ops)).layout false
 
 -- Two windows side by side; kitty's hidden window and workspace 2's window go to the corner
@@ -102,7 +101,7 @@ def laidOut (ops : List Op) : List Effect := (run (.geometryChanged [(0, geom)] 
 
 -- With a monitor to the right, windows hide in the bottom left corner instead
 #guard
-  let right : Geom := let r : IRect := ⟨1920, 0, 1920, 1080⟩; ⟨r, r, r, 0, 0⟩
+  let right : Geom := let r : IRect := ⟨1920, 0, 1920, 1080⟩; ⟨r, r, r, 0, 0, "Right"⟩
   (run [.geometryChanged [(0, geom), (1, right)]]).hideCorner geom == .bottomLeft
 
 -- Dropping a scratchpad from the config frees its windows
@@ -118,14 +117,15 @@ open State
 -- The text protocol Swift speaks
 #guard WsName.parse "scratchpad:kitty" == .home "kitty" && WsName.parse "5" == .num 5 && WsName.parse "05" == .named "05"
   && WsName.parse "S" == .named "S"
+def runText (inputs : List String) : State := inputs.foldl (fun s i => (s.execText i).1) (stateInitFfi "")
 #guard
-  let s := ["windowAppeared\t7\tcode\t1\t0\t0", "monitorsChanged\t0\x1e1\t5\x1f1"].foldl stateStepFfi (stateInitFfi "")
-  s.snapshot == "focus\t1\t7\nscreen\t0\t1\nscreen\t1\t2\nwindow\t7\t1\t0\t-\nmru\t\nwsdefault\tmaster-stack\th\t500"
+  let s := runText ["windowAppeared\t7\tcode\t1\t0\t0", "monitorsChanged\t0\x1e1\t5\x1f1"]
+  s.snapshot == "focus\t1\t7\nscreen\t0\t1\nscreen\t1\t2\nwindow\t7\t1\t0\t-\nmru\t\nprev\t1\t-\nwsdefault\tmaster-stack\th\t500"
 #guard
-  let s := ["geometryChanged\t0\x1f0,0,1920,1080\x1f0,25,1920,1055\x1f0,25,1920,1055\x1f10\x1f10",
-    "windowAppeared\t7\tcode\t1\t0\t0", "mfact\t1\tadd\t100", "setLayout\t1\t-\tv"].foldl stateStepFfi (stateInitFfi "")
+  let s := runText ["geometryChanged\t0\x1f0,0,1920,1080\x1f0,25,1920,1055\x1f0,25,1920,1055\x1f10\x1f10\x1fBuilt-in",
+    "windowAppeared\t7\tcode\t1\t0\t0", "mfact\t1\tadd\t100", "setLayout\t1\t-\tv"]
   stateLayoutFfi s 0 == "unhide\t7\t0,0,1920,1080\t0\ntile\t7\t0,25,1920,1054\t0,25,1920,1055\t0"
     && (s.props (.num 1)).mfactPermille == 600 && (s.props (.num 1)).orientation == .v
-#guard (stateStepFfi (init []) "nonsense").snapshot == (init []).snapshot
+#guard ((init []).execText "nonsense").1.snapshot == (init []).snapshot
 
 end DwmacCore.Model.Test

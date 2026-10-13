@@ -43,6 +43,20 @@ def numOf : WsName → Nat
   | num n => n
   | _ => 0
 
+def homePrefix := "scratchpad:"
+
+/-- Swift's workspace name: `scratchpad:x` is a home, a number (as Swift would print it) is `num` -/
+def parse (s : String) : WsName :=
+  if s.startsWith homePrefix then .home (s.drop homePrefix.length).toString
+  else match s.toNat? with
+    | some n => if toString n == s then .num n else .named s
+    | none => .named s
+
+def render : WsName → String
+  | .num n => toString n
+  | .named s => s
+  | .home s => homePrefix ++ s
+
 end WsName
 
 abbrev WinId := Nat
@@ -78,6 +92,8 @@ structure Geom where
   padded : IRect
   gapH : Nat
   gapV : Nat
+  /-- For messages -/
+  name : String := ""
 deriving DecidableEq, Repr, Inhabited
 
 inductive WsLayout where
@@ -91,12 +107,14 @@ structure WsProps where
   mfactPermille : Nat
 deriving DecidableEq, Repr, Inhabited
 
-/-- Layout settings from the config -/
-structure LayoutCfg where
+/-- Settings from the config that the invariant doesn't care about -/
+structure Settings where
   defaultLayout : WsLayout := .masterStack
   defaultMfactPermille : Nat := 500
   masterAtStop : Bool := false
   centerFloating : Bool := false
+  /-- `persistent-workspaces`: listed by `workspace next`/`prev` even when empty -/
+  persistent : List WsName := []
 deriving DecidableEq, Repr, Inhabited
 
 inductive MfactChange where
@@ -131,7 +149,12 @@ structure State where
   /-- Workspaces whose layout differs from the config's default -/
   wsProps : List (WsName × WsProps) := []
   geometry : List (MonId × Geom) := []
-  layoutCfg : LayoutCfg := {}
+  settings : Settings := {}
+  /-- What `focus-back-and-forth` and `workspace-back-and-forth` go back to: the focus before the last change -/
+  prevFocus : Option (WsName × Option WinId) := none
+  prevWs : Option WsName := none
+  /-- `focus-master-or-back`: the window each workspace's master was focused from -/
+  lastNonMaster : List (WsName × WinId) := []
 deriving Repr, Inhabited
 
 namespace State
@@ -149,7 +172,7 @@ def focusedApp (s : State) : Option AppId := s.focusWin.bind fun id => (s.window
 def props (s : State) (ws : WsName) : WsProps :=
   match s.wsProps.find? (·.1 == ws) with
   | some p => p.2
-  | none => { layout := s.layoutCfg.defaultLayout, orientation := .h, mfactPermille := s.layoutCfg.defaultMfactPermille }
+  | none => { layout := s.settings.defaultLayout, orientation := .h, mfactPermille := s.settings.defaultMfactPermille }
 
 def setProps (s : State) (ws : WsName) (p : WsProps) : State :=
   { s with wsProps := (ws, p) :: s.wsProps.filter (·.1 != ws) }
@@ -284,7 +307,9 @@ inductive Op where
   /-- macOS took the window off the layout (native fullscreen, hidden app), or gave it back -/
   | setParked (id : WinId) (parked : Bool)
   | geometryChanged (geometry : List (MonId × Geom))
-  | layoutConfigChanged (cfg : LayoutCfg)
+  | settingsChanged (cfg : Settings)
+  /-- `focus-master-or-back` leaves `id` for `ws`'s master -/
+  | setLastNonMaster (ws : WsName) (id : WinId)
 deriving Repr
 
 def focusWorkspace (s : State) (ws : WsName) : State :=
@@ -435,7 +460,8 @@ def raw (s : State) : Op → State
   | .setFullscreen id on noOuterGaps => s.setFullscreen id on noOuterGaps
   | .setParked id parked => { s with windows := s.mapWins (·.id == id) ({ · with parked }) }
   | .geometryChanged geometry => { s with geometry }
-  | .layoutConfigChanged layoutCfg => { s with layoutCfg }
+  | .settingsChanged settings => { s with settings }
+  | .setLastNonMaster ws id => { s with lastNonMaster := (ws, id) :: s.lastNonMaster.filter (·.1 != ws) }
 
 /-! ## Normalization -/
 

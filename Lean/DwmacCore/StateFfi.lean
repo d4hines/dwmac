@@ -1,33 +1,22 @@
-import DwmacCore.Layout
+import DwmacCore.Command
 
 /-!
 # The state machine, exported to C
 
-Swift drives the model through two text-based calls, so adding an op doesn't change the C API:
+Swift drives the model through text-based calls, so adding an op or a command doesn't change the C API:
 
-* `dwmac_lean_state_step state op`: apply one op, encoded as tab-separated fields (see `parseOp`). Lists separate
-  items with `\x1e` and pairs with `\x1f`. An op that doesn't parse leaves the state alone
+* `dwmac_lean_state_exec state input`: run an event or a command (see `parseInput`), encoded as tab-separated
+  fields. Lists separate items with `\x1e` and pairs with `\x1f`. Returns the new state and the reply (see
+  `Reply.render`). Input that doesn't parse leaves the state alone, with a failed reply
+* `dwmac_lean_state_preview state input`: the reply `exec` would give, without changing the state
 * `dwmac_lean_state_snapshot state`: the state, one record per line (see `snapshot`)
 * `dwmac_lean_state_layout state showAll`: the layout's effects, one per line (see `Effect.render`)
 
-Whatever the input, the result is `State.step` of some op (or the state unchanged), so `reachable_inv` holds for it.
+Whatever the input, the result is `State.exec` of some input (or the state unchanged), so `reachable_exec_inv` holds
+for it.
 -/
 
 namespace DwmacCore.Model
-
-def homePrefix := "scratchpad:"
-
-/-- Swift's workspace name: `scratchpad:x` is a home, a number (as Swift would print it) is `num` -/
-def WsName.parse (s : String) : WsName :=
-  if s.startsWith homePrefix then .home (s.drop homePrefix.length).toString
-  else match s.toNat? with
-    | some n => if toString n == s then .num n else .named s
-    | none => .named s
-
-def WsName.render : WsName → String
-  | .num n => toString n
-  | .named s => s
-  | .home s => homePrefix ++ s
 
 private def items (s : String) : List String := (s.splitOn "\x1e").filter (· ≠ "")
 private def pair (s : String) : Option (String × String) :=
@@ -56,12 +45,12 @@ def parseRect (s : String) : Option IRect :=
 
 def IRect.render (r : IRect) : String := s!"{r.x},{r.y},{r.w},{r.h}"
 
-/-- Items of `mon rect visible padded gapH gapV`, separated by `\x1f` -/
+/-- Items of `mon rect visible padded gapH gapV name`, separated by `\x1f` -/
 def parseGeometry (s : String) : Option (List (MonId × Geom)) :=
   (items s).mapM fun i =>
     match i.splitOn "\x1f" with
-    | [mon, rect, visible, padded, gapH, gapV] => do
-      let g : Geom := ⟨← parseRect rect, ← parseRect visible, ← parseRect padded, ← gapH.toNat?, ← gapV.toNat?⟩
+    | [mon, rect, visible, padded, gapH, gapV, name] => do
+      let g : Geom := ⟨← parseRect rect, ← parseRect visible, ← parseRect padded, ← gapH.toNat?, ← gapV.toNat?, name⟩
       return (← mon.toNat?, g)
     | _ => none
 
@@ -121,18 +110,112 @@ def parseOp (s : String) : Option State.Op :=
     return State.Op.setFullscreen (← id.toNat?) (← parseBool on) (← parseBool noOuterGaps)
   | ["setParked", id, parked] => return State.Op.setParked (← id.toNat?) (← parseBool parked)
   | ["geometryChanged", geometry] => return State.Op.geometryChanged (← parseGeometry geometry)
-  | ["layoutConfigChanged", layout, mfact, masterAtStop, center] =>
-    return State.Op.layoutConfigChanged
+  | ["settingsChanged", layout, mfact, masterAtStop, center, persistent] =>
+    return State.Op.settingsChanged
       { defaultLayout := ← parseLayout layout, defaultMfactPermille := ← mfact.toNat?,
-        masterAtStop := ← parseBool masterAtStop, centerFloating := ← parseBool center }
+        masterAtStop := ← parseBool masterAtStop, centerFloating := ← parseBool center,
+        persistent := (items persistent).map WsName.parse }
   | _ => none
+
+private def parseTarget (s : String) : Option Target :=
+  if s == "-" then some .focused
+  else match s.toList with
+    | 'w' :: id => return .window (← (String.ofList id).toNat?) false
+    | 'e' :: id => return .window (← (String.ofList id).toNat?) true
+    | 's' :: ws => return .workspace (.parse (String.ofList ws))
+    | _ => none
+
+private def parseNextPrev : String → Option NextPrev
+  | "next" => some .next
+  | "prev" => some .prev
+  | _ => none
+
+/-- `name <ws> - -` or `next|prev - <wrap> <among: -, or a list>` -/
+private def parseWsTo (kind name wrap among : String) : Option WsTo :=
+  if kind == "name" then some (.name (.parse name))
+  else
+    let among := if among == "-" then none else some ((items among).map WsName.parse)
+    return .rel (← parseNextPrev kind) (← parseBool wrap) among
+
+private def parseLayoutDesc : String → Option LayoutDesc
+  | "master-stack" => some .masterStack
+  | "h_master-stack" => some .hMasterStack
+  | "v_master-stack" => some .vMasterStack
+  | "horizontal" => some .horizontal
+  | "vertical" => some .vertical
+  | "tiling" => some .tiling
+  | "floating" => some .floating
+  | _ => none
+
+def parseCmd : List String → Option Cmd
+  | ["focus", t, "window", id] => return .focus (← parseTarget t) (.window (← id.toNat?))
+  | ["focus", t, "index", n] => return .focus (← parseTarget t) (.index (← n.toNat?))
+  | ["focus", t, dir, boundary] =>
+    return .focus (← parseTarget t) (.rel (← parseNextPrev dir) (← match boundary with
+      | "stop" => some .stop
+      | "fail" => some .fail
+      | "wrap" => some .wrap
+      | _ => none))
+  | ["focusBackAndForth"] => some .focusBackAndForth
+  | ["focusMasterOrBack"] => some .focusMasterOrBack
+  | ["focusMonitor", mon] => return .focusMonitor (← mon.toNat?)
+  | ["workspace", t, kind, name, wrap, among, autoBackAndForth, failIfNoop] =>
+    return .workspace (← parseTarget t) (← parseWsTo kind name wrap among) (← parseBool autoBackAndForth)
+      (← parseBool failIfNoop)
+  | ["workspaceBackAndForth"] => some .workspaceBackAndForth
+  | ["summonWorkspace", ws, failIfNoop] => return .summonWorkspace (.parse ws) (← parseBool failIfNoop)
+  | ["moveWorkspaceToMonitor", t, mon] => return .moveWorkspaceToMonitor (← parseTarget t) (← mon.toNat?)
+  | ["moveNodeToWorkspace", t, kind, name, wrap, among, focusFollows, failIfNoop] =>
+    return .moveNodeToWorkspace (← parseTarget t) (← parseWsTo kind name wrap among) (← parseBool focusFollows)
+      (← parseBool failIfNoop)
+  | ["moveNodeToMonitor", t, mon, dir, focusFollows, failIfNoop] =>
+    return .moveNodeToMonitor (← parseTarget t) (← mon.toNat?)
+      (← match dir with
+        | "-" => some none
+        | "h1" => some (some (.h, true))
+        | "h0" => some (some (.h, false))
+        | "v1" => some (some (.v, true))
+        | "v0" => some (some (.v, false))
+        | _ => none)
+      (← parseBool focusFollows) (← parseBool failIfNoop)
+  | ["moveNodeToMaster"] => some .moveNodeToMaster
+  | ["swap", t, dir, wrap, swapFocus] =>
+    return .swap (← parseTarget t) (← parseNextPrev dir) (← parseBool wrap) (← parseBool swapFocus)
+  | ["scratchpad", name] => some (.scratchpad name)
+  | ["layout", t, descs] => return .layout (← parseTarget t) (← (items descs).mapM parseLayoutDesc)
+  | ["mfact", kind, amount] => return .mfact (← parseMfactChange kind amount)
+  | ["fullscreen", t, tog, noOuterGaps, failIfNoop] =>
+    return .fullscreen (← parseTarget t)
+      (← match tog with
+        | "on" => some .on
+        | "off" => some .off
+        | "toggle" => some .toggle
+        | _ => none)
+      (← parseBool noOuterGaps) (← parseBool failIfNoop)
+  | _ => none
+
+/-- `cmd <command fields>` (see `parseCmd`), else an op (see `parseOp`) -/
+def parseInput (s : String) : Option State.Input :=
+  match s.splitOn "\t" with
+  | "cmd" :: fields => (parseCmd fields).map .cmd
+  | _ => (parseOp s).map .op
+
+def CmdEffect.render : CmdEffect → String
+  | .launch app => s!"effect\tlaunch\t{app}"
+  | .prepareSummon id => s!"effect\tprepareSummon\t{id}"
+
+/-- `ok <0/1>`, then `out <line>`, `err <line>` and `effect <kind> <arg>` records -/
+def Reply.render (r : Reply) : String :=
+  "\n".intercalate (s!"ok\t{b r.ok}" :: r.out.map (s!"out\t{·}") ++ r.err.map (s!"err\t{·}") ++
+    r.effects.map (·.render))
 
 def WsProps.render (p : WsProps) : String := s!"{p.layout.render}\t{p.orientation.render}\t{p.mfactPermille}"
 
 /-- One record per line, fields separated by tabs:
 `focus <ws> <window id or ->`, then `screen <monitor> <ws>` per monitor (main first), then
 `window <id> <ws> <floating 0/1> <fullscreen: -, or no outer gaps 0/1>` per window in tiling order, then
-`mru <ids, most recent first, comma separated>`, then `wsdefault <layout> <orientation> <mfact permille>` and
+`mru <ids, most recent first, comma separated>`, `prev <ws or -> <window id or ->` (the focus before the last change),
+then `wsdefault <layout> <orientation> <mfact permille>` and
 `ws <name> <layout> <orientation> <mfact permille>` per workspace that differs from it -/
 def State.snapshot (s : State) : String :=
   let focus := s!"focus\t{s.focusWs.render}\t{(s.focusWin.map toString).getD "-"}"
@@ -140,9 +223,12 @@ def State.snapshot (s : State) : String :=
   let windows := s.windows.map fun w =>
     s!"window\t{w.id}\t{w.ws.render}\t{b w.floating}\t{(w.fullscreen.map b).getD "-"}"
   let mru := s!"mru\t{",".intercalate (s.mru.map toString)}"
+  let prev := match s.prevFocus with
+    | some (ws, win) => s!"prev\t{ws.render}\t{(win.map toString).getD "-"}"
+    | none => "prev\t-\t-"
   let wsDefault := s!"wsdefault\t{(s.props (.named "")).render}"
   let wsProps := s.wsProps.map fun (ws, p) => s!"ws\t{ws.render}\t{p.render}"
-  "\n".intercalate (focus :: screens ++ windows ++ [mru, wsDefault] ++ wsProps)
+  "\n".intercalate (focus :: screens ++ windows ++ [mru, prev, wsDefault] ++ wsProps)
 
 def Corner.render : Corner → String
   | .bottomLeft => "bottom-left"
@@ -159,11 +245,18 @@ def Effect.render : Effect → String
 @[export dwmac_lean_state_init]
 def stateInitFfi (scratchpads : String) : State := State.init ((parseScratchpads scratchpads).getD [])
 
-@[export dwmac_lean_state_step]
-def stateStepFfi (s : State) (op : String) : State :=
-  match parseOp op with
-  | some op => s.step op
-  | none => s
+def State.execText (s : State) (input : String) : State × Reply :=
+  match parseInput input with
+  | some i => s.exec i
+  | none => (s, .fail s!"dwmac bug: Lean can't parse '{input}'")
+
+@[export dwmac_lean_state_exec]
+def stateExecFfi (s : State) (input : String) : State × String :=
+  let (s, r) := s.execText input
+  (s, r.render)
+
+@[export dwmac_lean_state_preview]
+def statePreviewFfi (s : State) (input : String) : String := (s.execText input).2.render
 
 @[export dwmac_lean_state_snapshot]
 def stateSnapshotFfi (s : State) : String := s.snapshot

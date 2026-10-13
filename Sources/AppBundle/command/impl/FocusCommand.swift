@@ -6,43 +6,17 @@ struct FocusCommand: Command {
     /*conforms*/ var shouldResetClosedWindowsCache = false
 
     func run(_ env: CmdEnv, _ io: CmdIo) async throws -> Bool {
-        guard let target = args.resolveTargetOrReportError(env, io) else { return false }
-
-        // Simplified: Ignore floating-as-tiling complexity for now
-
-        switch args.target {
-            case .windowId(let windowId):
-                if let windowToFocus = Window.get(byId: windowId) {
-                    return windowToFocus.focusWindow()
-                } else {
-                    return io.err("Can't find window with ID \(windowId)")
-                }
-            case .index(let index):
-                let windows = target.workspace.allWindows
-                if let windowToFocus = windows.getOrNil(atIndex: Int(index)) {
-                    return windowToFocus.focusWindow()
-                } else {
-                    return io.err("Can't find window with index \(index)")
-                }
+        let to: LeanCmd.FocusTo = switch args.target {
+            case .windowId(let id): .window(id)
+            case .index(let index): .index(Int(index))
             case .relative(let nextPrev):
-                let windows = target.workspace.allWindows
-                guard let currentIndex = windows.firstIndex(where: { $0 == target.windowOrNil }) else {
-                    return false
+                switch args.rawBoundariesAction ?? .wrapAroundTheWorkspace {
+                    case .stop: .relative(nextPrev, boundary: "stop")
+                    case .fail: .relative(nextPrev, boundary: "fail")
+                    case .wrapAroundTheWorkspace: .relative(nextPrev, boundary: "wrap")
+                    case .wrapAroundAllMonitors: dieT("Must be discarded by args parser")
                 }
-                var targetIndex = switch nextPrev {
-                    case .next: currentIndex + 1
-                    case .prev: currentIndex - 1
-                }
-                if !(0 ..< windows.count).contains(targetIndex) {
-                    let action = args.rawBoundariesAction ?? .wrapAroundTheWorkspace
-                    switch action {
-                        case .stop: return true
-                        case .fail: return false
-                        case .wrapAroundTheWorkspace: targetIndex = (targetIndex + windows.count) % windows.count
-                        case .wrapAroundAllMonitors: return dieT("Must be discarded by args parser")
-                    }
-                }
-                return windows[targetIndex].focusWindow()
         }
+        return leanRun(.focus(args.leanTarget(env), to), io).ok
     }
 }

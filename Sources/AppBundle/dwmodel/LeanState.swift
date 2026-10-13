@@ -24,7 +24,8 @@ enum LeanOp: Equatable {
     case setFullscreen(UInt32, on: Bool, noOuterGaps: Bool)
     case setParked(UInt32, Bool)
     case geometryChanged([(monitor: Int, geometry: LeanGeometry)])
-    case layoutConfigChanged(defaultLayout: Layout, defaultMfactPermille: Int, masterAtStop: Bool, centerFloating: Bool)
+    case settingsChanged(defaultLayout: Layout, defaultMfactPermille: Int, masterAtStop: Bool, centerFloating: Bool,
+                         persistent: [String])
 
     enum MfactChange {
         case set(permille: Int), add(permille: Int), sub(permille: Int)
@@ -59,22 +60,17 @@ enum LeanOp: Equatable {
                 ["configChanged", list(sps.map { "\($0.name)\u{1f}\($0.appId)" }), forcedList(forced)]
             case .setLayout(let ws, let layout, let orientation):
                 ["setLayout", ws, layout?.rawValue ?? "-", orientation.map { $0 == .h ? "h" : "v" } ?? "-"]
-            case .mfact(let ws, let change):
-                switch change {
-                    case .set(let n): ["mfact", ws, "set", "\(max(n, 0))"]
-                    case .add(let n): ["mfact", ws, "add", "\(max(n, 0))"]
-                    case .sub(let n): ["mfact", ws, "sub", "\(max(n, 0))"]
-                }
+            case .mfact(let ws, let change): ["mfact", ws] + change.leanFields
             case .setFullscreen(let id, let on, let noOuterGaps): ["setFullscreen", "\(id)", b(on), b(noOuterGaps)]
             case .setParked(let id, let parked): ["setParked", "\(id)", b(parked)]
             case .geometryChanged(let geometry):
                 ["geometryChanged", list(geometry.map { mon, g in
                     let fields: [String] = ["\(mon)", g.rect.leanEncoded, g.visible.leanEncoded, g.padded.leanEncoded,
-                                            "\(max(g.gapH, 0))", "\(max(g.gapV, 0))"]
+                                            "\(max(g.gapH, 0))", "\(max(g.gapV, 0))", g.name.leanSafe]
                     return fields.joined(separator: "\u{1f}")
                 })]
-            case .layoutConfigChanged(let layout, let mfact, let masterAtStop, let center):
-                ["layoutConfigChanged", layout.rawValue, "\(max(mfact, 0))", b(masterAtStop), b(center)]
+            case .settingsChanged(let layout, let mfact, let masterAtStop, let center, let persistent):
+                ["settingsChanged", layout.rawValue, "\(max(mfact, 0))", b(masterAtStop), b(center), list(persistent)]
         }
         return fields.joined(separator: "\t")
     }
@@ -88,6 +84,143 @@ struct LeanGeometry {
     let padded: Rect
     let gapH: Int
     let gapV: Int
+    /// For messages
+    let name: String
+}
+
+extension String {
+    /// Without the protocol's separators
+    var leanSafe: String {
+        String(unicodeScalars.filter { !["\t", "\n", "\u{1e}", "\u{1f}"].contains($0) })
+    }
+}
+
+/// A command (Lean/DwmacCore/Command.lean), with what only Swift knows (monitors, stdin) resolved
+enum LeanCmd {
+    /// What a command acts on: `--window-id`/`DWMAC_WINDOW_ID` (`fromEnv`), `--workspace`/`DWMAC_WORKSPACE`, else focus
+    enum Target {
+        case focused
+        case window(UInt32, fromEnv: Bool)
+        case workspace(String)
+    }
+    enum WsTo {
+        case name(String)
+        /// Among the workspaces on the target's monitor, or `among` (from stdin)
+        case relative(NextPrev, wrap: Bool, among: [String]?)
+    }
+    enum FocusTo {
+        case window(UInt32)
+        case index(Int)
+        case relative(NextPrev, boundary: String)
+    }
+
+    case focus(Target, FocusTo)
+    case focusBackAndForth
+    case focusMasterOrBack
+    case focusMonitor(Int)
+    case workspace(Target, WsTo, autoBackAndForth: Bool, failIfNoop: Bool)
+    case workspaceBackAndForth
+    case summonWorkspace(String, failIfNoop: Bool)
+    case moveWorkspaceToMonitor(Target, monitor: Int)
+    case moveNodeToWorkspace(Target, WsTo, focusFollows: Bool, failIfNoop: Bool)
+    /// `direction`: the direction it was given as, if any. Moving right or down along the target workspace's
+    /// orientation puts the window first
+    case moveNodeToMonitor(Target, monitor: Int, direction: CardinalDirection?, focusFollows: Bool, failIfNoop: Bool)
+    case moveNodeToMaster
+    case swap(Target, NextPrev, wrap: Bool, swapFocus: Bool)
+    case scratchpad(String)
+    case layout(Target, [String])
+    case mfact(LeanOp.MfactChange)
+    case fullscreen(Target, String, noOuterGaps: Bool, failIfNoop: Bool)
+
+    /// See `parseCmd` in Lean/DwmacCore/StateFfi.lean
+    var encoded: String {
+        func b(_ value: Bool) -> String { value ? "1" : "0" }
+        func target(_ t: Target) -> String {
+            switch t {
+                case .focused: "-"
+                case .window(let id, let fromEnv): (fromEnv ? "e" : "w") + "\(id)"
+                case .workspace(let ws): "s" + ws
+            }
+        }
+        func wsTo(_ to: WsTo) -> [String] {
+            switch to {
+                case .name(let ws): ["name", ws, "-", "-"]
+                case .relative(let dir, let wrap, let among):
+                    [dir == .next ? "next" : "prev", "-", b(wrap), among.map { $0.joined(separator: "\u{1e}") } ?? "-"]
+            }
+        }
+        let fields: [String] = switch self {
+            case .focus(let t, .window(let id)): ["focus", target(t), "window", "\(id)"]
+            case .focus(let t, .index(let n)): ["focus", target(t), "index", "\(max(n, 0))"]
+            case .focus(let t, .relative(let dir, let boundary)):
+                ["focus", target(t), dir == .next ? "next" : "prev", boundary]
+            case .focusBackAndForth: ["focusBackAndForth"]
+            case .focusMasterOrBack: ["focusMasterOrBack"]
+            case .focusMonitor(let mon): ["focusMonitor", "\(mon)"]
+            case .workspace(let t, let to, let autoBackAndForth, let failIfNoop):
+                ["workspace", target(t)] + wsTo(to) + [b(autoBackAndForth), b(failIfNoop)]
+            case .workspaceBackAndForth: ["workspaceBackAndForth"]
+            case .summonWorkspace(let ws, let failIfNoop): ["summonWorkspace", ws, b(failIfNoop)]
+            case .moveWorkspaceToMonitor(let t, let mon): ["moveWorkspaceToMonitor", target(t), "\(mon)"]
+            case .moveNodeToWorkspace(let t, let to, let focusFollows, let failIfNoop):
+                ["moveNodeToWorkspace", target(t)] + wsTo(to) + [b(focusFollows), b(failIfNoop)]
+            case .moveNodeToMonitor(let t, let mon, let dir, let focusFollows, let failIfNoop):
+                ["moveNodeToMonitor", target(t), "\(mon)",
+                 dir.map { ($0.orientation == .h ? "h" : "v") + b($0.isPositive) } ?? "-", b(focusFollows), b(failIfNoop)]
+            case .moveNodeToMaster: ["moveNodeToMaster"]
+            case .swap(let t, let dir, let wrap, let swapFocus):
+                ["swap", target(t), dir == .next ? "next" : "prev", b(wrap), b(swapFocus)]
+            case .scratchpad(let name): ["scratchpad", name]
+            case .layout(let t, let descriptions): ["layout", target(t), descriptions.joined(separator: "\u{1e}")]
+            case .mfact(let change): ["mfact"] + change.leanFields
+            case .fullscreen(let t, let toggle, let noOuterGaps, let failIfNoop):
+                ["fullscreen", target(t), toggle, b(noOuterGaps), b(failIfNoop)]
+        }
+        return (["cmd"] + fields).joined(separator: "\t")
+    }
+}
+
+extension LeanOp.MfactChange {
+    var leanFields: [String] {
+        switch self {
+            case .set(let n): ["set", "\(max(n, 0))"]
+            case .add(let n): ["add", "\(max(n, 0))"]
+            case .sub(let n): ["sub", "\(max(n, 0))"]
+        }
+    }
+}
+
+/// A command's result: exit code, output, and what Swift should do besides laying out windows
+struct LeanReply {
+    enum Effect {
+        /// Launch the app (or make it open a window)
+        case launch(appId: String)
+        /// A scratchpad window is about to be summoned: resize it while it's still hidden
+        case prepareSummon(UInt32)
+    }
+    var ok = false
+    var out: [String] = []
+    var err: [String] = []
+    var effects: [Effect] = []
+
+    init(parsing text: String) {
+        for line in text.split(separator: "\n") {
+            let f = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+            switch (f.first, f.count) {
+                case ("ok", 2): ok = f[1] == "1"
+                case ("out", 2): out.append(f[1])
+                case ("err", 2): err.append(f[1])
+                case ("effect", 3):
+                    switch f[1] {
+                        case "launch": effects.append(.launch(appId: f[2]))
+                        case "prepareSummon": if let id = UInt32(f[2]) { effects.append(.prepareSummon(id)) }
+                        default: break
+                    }
+                default: break
+            }
+        }
+    }
 }
 
 extension Rect {
@@ -160,6 +293,9 @@ struct LeanSnapshot: Equatable {
     var windows: [Win] = []
     /// Most recently focused first. May hold closed windows
     var mru: [UInt32] = []
+    /// The focus before the last change
+    var prevWorkspace: String? = nil
+    var prevWindow: UInt32? = nil
     var defaultWsProps = WsProps()
     /// Workspaces whose layout differs from the default
     var wsProps: [String: WsProps] = [:]
@@ -180,6 +316,9 @@ struct LeanSnapshot: Equatable {
                     }
                 case ("mru", 2):
                     mru = f[1].split(separator: ",").compactMap { UInt32($0) }
+                case ("prev", 3):
+                    prevWorkspace = f[1] == "-" ? nil : f[1]
+                    prevWindow = UInt32(f[2])
                 case ("wsdefault", 4):
                     if let p = WsProps(f[1], f[2], f[3]) { defaultWsProps = p }
                 case ("ws", 5):
@@ -214,9 +353,25 @@ enum LeanState {
 
     @discardableResult
     static func apply(_ op: LeanOp) -> LeanSnapshot {
-        dwmac_state_step(op.encoded)
-        last = snapshot
+        _ = exec(op.encoded)
         return last
+    }
+
+    static func run(_ cmd: LeanCmd) -> LeanReply { exec(cmd.encoded) }
+
+    /// The reply `run` would give, without changing anything
+    static func preview(_ cmd: LeanCmd) -> LeanReply {
+        guard let raw = dwmac_state_preview(cmd.encoded) else { return LeanReply(parsing: "") }
+        defer { free(raw) }
+        return LeanReply(parsing: String(cString: raw))
+    }
+
+    private static func exec(_ input: String) -> LeanReply {
+        let raw = dwmac_state_exec(input)
+        last = snapshot
+        guard let raw else { return LeanReply(parsing: "") }
+        defer { free(raw) }
+        return LeanReply(parsing: String(cString: raw))
     }
 
     /// Where every window goes. With `showAll` (dwmac is disabled), every workspace is laid out and nothing is hidden

@@ -15,19 +15,14 @@ struct MoveNodeToMonitorCommand: Command {
         }
         switch args.target.val.resolve(currentMonitor, wrapAround: args.wrapAround) {
             case .success(let targetMonitor):
-                let targetWs = targetMonitor.activeWorkspace
-                let index = true == args.target.val.directionOrNil
-                    .map { dir in dir.isPositive && targetWs.orientation == dir.orientation }
-                    ? 0
-                    : INDEX_BIND_LAST
-                return moveWindowToWorkspace(
-                    window,
-                    targetWs,
-                    io,
-                    focusFollowsWindow: args.focusFollowsWindow,
+                let cmd = LeanCmd.moveNodeToMonitor(
+                    args.leanTarget(env),
+                    monitor: leanMonitorId(targetMonitor.rect.topLeftCorner),
+                    direction: args.target.val.directionOrNil,
+                    focusFollows: args.focusFollowsWindow,
                     failIfNoop: args.failIfNoop,
-                    index: index,
                 )
+                return leanRun(cmd, io).ok
             case .failure(let msg):
                 return io.err(msg)
         }
