@@ -285,3 +285,37 @@ def fullscreenCmd (tog : Toggle) (failIfNoop := false) : Cmd := .fullscreen .foc
   (s.splitOn "\n").contains "prev\ta\t1"
 
 end DwmacCore.Model.CommandTest
+
+/-! ## Bugs found in other window managers' reports (scratchpad invariant mining) -/
+
+namespace DwmacCore.Model.CommandTest
+open State
+
+-- A window that's hidden (its app hidden, or native fullscreen) loses focus to one that's shown, and `focus next`
+-- still works. AeroSpace #1614, #18
+#guard (go [win 1, win 2, focusW 1, .op (.setParked 1 true)]).focusWin == some 2
+#guard (reply [win 1, win 2, win 3, focusW 1, .op (.setParked 1 true)] next).ok
+-- Closing the focused window doesn't hand focus to a hidden one
+#guard (go [win 1, win 2, win 3, focusW 2, focusW 1, .op (.setParked 2 true), .op (.windowClosed 1)]).focusWin == some 3
+-- When every window is hidden, focus stays (macOS reports a native fullscreen window as focused)
+#guard (go [win 1, focusW 1, .op (.setParked 1 true)]).focusWin == some 1
+
+-- A force assignment (new monitor, or config reload) moves the focused workspace to its monitor, instead of taking it
+-- off screen. AeroSpace #520, #2173; i3 #2936
+def W : WsName := .named "W"
+#guard let s := go [win 1 W, focusW 1, .op (.monitorsChanged [0, 1] [(W, 1)])]
+  s.focusWs == W && s.focusWin == some 1 && s.screens.lookup 1 == some W
+#guard let s := go [.op (.monitorsChanged [0, 1] []), win 1 W, focusW 1, .op (.configChanged [kitty] [(W, 1)])]
+  s.focusWs == W && s.focusWin == some 1 && s.screens.lookup 1 == some W
+#guard let s := go [.op (.monitorsChanged [0, 1] []), win 1 (.num 1), focusW 1, .op (.configChanged [kitty] [(.num 1, 1)])]
+  s.focusWs == .num 1 && s.screens.lookup 1 == some (.num 1)
+-- A workspace that was shown, not focused, follows its new assignment too
+#guard let s := go [.op (.monitorsChanged [0, 1] []), win 1 W, focusW 1, .op (.showWorkspace 1 b), win 2 b, focusW 2,
+    .op (.configChanged [kitty] [(W, 1)])]
+  s.screens.lookup 1 == some W
+-- Unplugging a monitor doesn't push its workspace onto the main one
+#guard let s := go [.op (.monitorsChanged [0, 1] []), win 1 (.num 1), .op (.showWorkspace 1 b), win 2 b, focusW 1,
+    .op (.monitorsChanged [0] [])]
+  s.screens == [(0, .num 1)]
+
+end DwmacCore.Model.CommandTest

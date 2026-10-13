@@ -210,8 +210,19 @@ def workspaceMonitor (s : State) (ws : WsName) : MonId :=
 /-- Whether `id` is a window of `ws` -/
 def hasWindow (s : State) (ws : WsName) (id : WinId) : Bool := s.windows.any (fun w => w.id == id && w.ws == ws)
 
-/-- The window of `ws` to focus: the most recently focused one, else the first -/
+/-- Whether `id` is a window of `ws` that macOS shows (not parked) -/
+def hasShownWindow (s : State) (ws : WsName) (id : WinId) : Bool :=
+  s.windows.any (fun w => w.id == id && w.ws == ws && !w.parked)
+
+/-- The window of `ws` to focus: the most recently focused one, else the first. Windows macOS shows come first: a
+hidden app's window, or one in native fullscreen, only if they're all like that -/
 def mruWin (s : State) (ws : WsName) : Option WinId :=
+  match s.mru.find? (s.hasShownWindow ws) with
+  | some id => some id
+  | none =>
+  match s.windows.find? (fun w => w.ws == ws && !w.parked) with
+  | some w => some w.id
+  | none =>
   match s.mru.find? (s.hasWindow ws) with
   | some id => some id
   | none => (s.windows.find? (·.ws == ws)).map (·.id)
@@ -417,10 +428,26 @@ def keepScreens (s : State) (mons : List MonId) (forced : List (WsName × MonId)
   let s := { s with forced }
   { s with screens := s.screens.filter fun p => mons.contains p.1 && s.allowedOn p.2 p.1 }
 
-/-- Monitors still connected keep their workspace (if it's still allowed there); the rest get stubs -/
+/-- The connected monitor `ws` is now forced onto, if it isn't shown -/
+def forcedHere (t : State) (ws : WsName) : Option MonId :=
+  (t.forcedOf ws).filter fun m => t.monitors.contains m && !t.visible.contains ws && !ws.isHome
+
+def followStep (t : State) (ws : WsName) : State :=
+  match t.forcedHere ws with
+  | some m => t.setActive m ws
+  | none => t
+
+/-- Workspaces `prev` showed that are now forced onto a connected monitor go there, and the focused one keeps focus,
+rather than leaving the screen -/
+def followForced (prev s : State) : State :=
+  let t := (prev.visible.filter (· != prev.focusWs)).foldl followStep s
+  if (t.forcedHere prev.focusWs).isSome then t.focusOn prev.focusWs prev.focusWin else t
+
+/-- Monitors still connected keep their workspace (if it's still allowed there); the rest get stubs. A shown
+workspace that's now forced onto another connected monitor moves there -/
 def monitorsChanged (s : State) (mons : List MonId) (forced : List (WsName × MonId)) : State :=
   let s' := mons.foldl addScreen (s.keepScreens mons forced)
-  if s'.screens.isEmpty then s else s'
+  if s'.screens.isEmpty then s else s.followForced s'
 
 /-- Windows left in the home of a scratchpad that no longer owns them go to the focused workspace -/
 def evictFromHomes (s : State) : List Win :=
@@ -472,7 +499,10 @@ def raw (s : State) : Op → State
     s.setProps ws { p with layout := layout.getD p.layout, orientation := orientation.getD p.orientation }
   | .mfact ws change => s.mfact ws change
   | .setFullscreen id on noOuterGaps => s.setFullscreen id on noOuterGaps
-  | .setParked id parked => { s with windows := s.mapWins (·.id == id) ({ · with parked }) }
+  | .setParked id parked =>
+    -- A window macOS takes away loses focus (`fixFocus` picks another); macOS reports it if it keeps focus
+    { s with windows := s.mapWins (·.id == id) ({ · with parked }),
+             focusWin := if parked && s.focusWin == some id then none else s.focusWin }
   | .centered id => { s with windows := s.mapWins (·.id == id) ({ · with centered := true }) }
   | .geometryChanged geometry => { s with geometry }
   | .settingsChanged settings => { s with settings }

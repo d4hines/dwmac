@@ -71,6 +71,18 @@ theorem mruWin_spec {s : State} {ws : WsName} {id : WinId} (h : s.mruWin ws = so
   split at h
   · rename_i hf
     cases h
+    obtain ⟨w, hw, hc⟩ := List.any_eq_true.mp (mem_of_find?_some hf).2
+    simp only [Bool.and_eq_true, beq_iff_eq] at hc
+    exact ⟨w, hw, hc.1.1, hc.1.2⟩
+  split at h
+  · rename_i w hf
+    cases h
+    have := mem_of_find?_some hf
+    simp only [Bool.and_eq_true, beq_iff_eq] at this
+    exact ⟨w, this.1, rfl, this.2.1⟩
+  split at h
+  · rename_i hf
+    cases h
     exact hasWindow_spec (mem_of_find?_some hf).2
   · obtain ⟨w, hw, rfl⟩ := Option.map_eq_some_iff.mp h
     have := mem_of_find?_some hw
@@ -638,6 +650,20 @@ theorem keepScreens_ok {s : State} (hs : ScreensOk s) (mons : List MonId) (force
     simp only [keepScreens, List.mem_filter, Bool.and_eq_true] at hp
     exact hp.2.2
 
+theorem Struct.followForced {s t : State} (h : Struct t) : Struct (s.followForced t) := by
+  unfold State.followForced
+  simp only
+  have P := foldl_invariant Struct followStep
+    (fun a b ha => by
+      unfold followStep
+      split
+      · exact ha.setActive ..
+      · exact ha)
+  have P := P (s.visible.filter (· != s.focusWs)) t h
+  split
+  · exact P.focusOn ..
+  · exact P
+
 theorem monitorsChanged_struct {s : State} (h : Struct s) (mons : List MonId) (forced : List (WsName × MonId)) :
     Struct (s.monitorsChanged mons forced) := by
   unfold State.monitorsChanged
@@ -651,7 +677,7 @@ theorem monitorsChanged_struct {s : State} (h : Struct s) (mons : List MonId) (f
       (fun a b ⟨ha, hw, hsp⟩ => ⟨addScreen_ok ha b, by rw [addScreen_windows, hw], by rw [addScreen_scratchpads, hsp]⟩)
       mons _ ⟨keepScreens_ok h.screens mons forced, rfl, rfl⟩
     rw [hs'] at P
-    exact ⟨P.1, h.windows.congr P.2.1 P.2.2, by simpa using hne⟩
+    exact Struct.followForced ⟨P.1, h.windows.congr P.2.1 P.2.2, by simpa using hne⟩
 
 theorem placeWindow_struct {s : State} (h : Struct s) (id : WinId) (ws : WsName) (index : Nat)
     (floating : Option Bool) : Struct (s.placeWindow id ws index floating) := by
@@ -750,7 +776,7 @@ theorem raw_struct {s : State} (hinv : Inv s) (op : Op) : Struct (s.raw op) := b
     simp only [State.raw, State.setFullscreen]; split
     · exact (mapWins_struct h _ _).congr rfl rfl rfl rfl
     · exact h
-  | setParked id parked => exact mapWins_struct h _ _
+  | setParked id parked => exact (mapWins_struct h _ _).congr rfl rfl rfl rfl
   | centered id => exact mapWins_struct h _ _
   | geometryChanged geometry => exact h.congr rfl rfl rfl rfl
   | settingsChanged cfg => exact h.congr rfl rfl rfl rfl
