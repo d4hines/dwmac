@@ -96,6 +96,9 @@ let move_mouse_help_generated = """
 let move_node_to_master_help_generated = """
     USAGE: move-node-to-master [-h|--help]
     """
+let rotate_help_generated = """
+    USAGE: rotate [-h|--help]
+    """
 let move_node_to_monitor_help_generated = """
     USAGE: move-node-to-monitor [-h|--help] [--window-id <window-id>] [--focus-follows-window]
                                 [--wrap-around] (left|down|up|right|next|prev)

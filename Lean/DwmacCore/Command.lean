@@ -79,6 +79,8 @@ inductive Cmd where
   along the target workspace's orientation puts the window first -/
   | moveNodeToMonitor (t : Target) (mon : MonId) (dir : Option (Orientation × Bool)) (focusFollows failIfNoop : Bool)
   | moveNodeToMaster
+  /-- The last tiled window becomes master, focused (xmonad's `rotAllDown` + `focusMaster`) -/
+  | rotate
   | swap (t : Target) (dir : NextPrev) (wrap swapFocus : Bool)
   | scratchpad (name : String)
   | layout (t : Target) (toggleBetween : List LayoutDesc)
@@ -322,15 +324,21 @@ def moveNodeToMonitor (s : State) (t : Target) (mon : MonId) (dir : Option (Orie
         let first := dir.any fun (o, positive) => positive && (s.props ws).orientation == o
         s.moveWindowPlan id ws (if first then 0 else s.windows.length) focusFollows failIfNoop
 
+/-- Put `w` where its workspace's master is: before the first other tiled window -/
+def toMaster (s : State) (w : Win) : Op :=
+  let others := s.windows.filter fun x => x.ws == w.ws && x.id != w.id
+  .placeWindow w.id w.ws ((others.findIdx? fun x => !x.floating && !x.parked).getD 0) none
+
 def moveNodeToMaster (s : State) : Plan :=
   match s.focusWin.bind s.window? with
   | none => .quietFail
-  | some w =>
-    if w.floating then .quietFail
-    else
-      let others := s.windows.filter fun x => x.ws == w.ws && x.id != w.id
-      let i := (others.findIdx? fun x => !x.floating && !x.parked).getD 0
-      { ops := [.placeWindow w.id w.ws i none] }
+  | some w => if w.floating then .quietFail else { ops := [s.toMaster w] }
+
+/-- The focused workspace's last tiled window becomes master, and is focused. Repeated, every window takes a turn -/
+def rotate (s : State) : Plan :=
+  match ((s.wsWindows s.focusWs).filter (!·.floating)).getLast? with
+  | none => .quietFail
+  | some w => { ops := [s.toMaster w, .focusWindow w.id] }
 
 def swap (s : State) (t : Target) (dir : NextPrev) (wrap swapFocus : Bool) : Plan :=
   match s.resolve t with
@@ -424,6 +432,7 @@ def plan (s : State) : Cmd → Plan
   | .moveNodeToWorkspace t to focusFollows failIfNoop => s.moveNodeToWorkspace t to focusFollows failIfNoop
   | .moveNodeToMonitor t mon dir focusFollows failIfNoop => s.moveNodeToMonitor t mon dir focusFollows failIfNoop
   | .moveNodeToMaster => s.moveNodeToMaster
+  | .rotate => s.rotate
   | .swap t dir wrap swapFocus => s.swap t dir wrap swapFocus
   | .scratchpad name => s.scratchpad name
   | .layout t toggleBetween => s.layoutCmd t toggleBetween

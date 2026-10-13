@@ -30,6 +30,7 @@ let subcommandDescriptions = [
     ["  move-workspace-to-monitor", "Move workspace to monitor targeted by relative direction, by order, or by pattern."],
     ["  move", "Move the focused floating window."],
     ["  reload-config", "Reload currently active config"],
+    ["  rotate", "Make the focused workspace's last tiled window master, and focus it. Repeat to cycle through the windows."],
     ["  resize", "Resize the focused window"],
     ["  split", "Split focused window"],
     ["  scratchpad", "Toggle a named scratchpad over the focused workspace."],

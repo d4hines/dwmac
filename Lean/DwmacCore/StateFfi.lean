@@ -179,6 +179,7 @@ def parseCmd : List String → Option Cmd
         | _ => none)
       (← parseBool focusFollows) (← parseBool failIfNoop)
   | ["moveNodeToMaster"] => some .moveNodeToMaster
+  | ["rotate"] => some .rotate
   | ["swap", t, dir, wrap, swapFocus] =>
     return .swap (← parseTarget t) (← parseNextPrev dir) (← parseBool wrap) (← parseBool swapFocus)
   | ["scratchpad", name] => some (.scratchpad name)

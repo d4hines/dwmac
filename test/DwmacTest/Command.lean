@@ -149,6 +149,26 @@ def moveTo (ws : WsName) (focusFollows := false) (failIfNoop := false) : Cmd :=
 #guard order (go [floatWin 1, win 2, win 3, focusW 3, .cmd .moveNodeToMaster]) a == [1, 3, 2]
 #guard !(reply [floatWin 1, win 2, focusW 1] .moveNodeToMaster).ok
 
+-- rotate: the last tiled window becomes master and is focused; repeated, every window takes a turn
+#guard
+  let s := go [win 1, win 2, win 3, focusW 1, .cmd .rotate]
+  order s a == [3, 1, 2] && s.focusWin == some 3
+#guard order (go [win 1, win 2, win 3, focusW 1, .cmd .rotate, .cmd .rotate, .cmd .rotate]) a == [1, 2, 3]
+-- Floating windows (overlays, summoned scratchpads) are skipped, wherever they are, and stay put
+#guard
+  let s := go [floatWin 1, win 2, win 3, floatWin 4, focusW 2, .cmd .rotate]
+  order s a == [1, 3, 2, 4] && s.focusWin == some 3
+-- Parked windows (native fullscreen, hidden app) are skipped too
+#guard order (go [win 1, win 2, win 3, .op (.setParked 3 true), focusW 1, .cmd .rotate]) a == [2, 1, 3]
+-- One tiled window: it's focused
+#guard (go [win 1, floatWin 2, focusW 2, .cmd .rotate]).focusWin == some 1
+-- No tiled window: nothing to do
+#guard !(reply [floatWin 1, focusW 1] .rotate).ok && (reply [floatWin 1, focusW 1] .rotate).err.isEmpty
+-- Only the focused workspace rotates
+#guard
+  let s := go [win 1, win 2, win 3 b, win 4 b, focusW 1, .cmd .rotate]
+  order s a == [2, 1] && order s b == [3, 4]
+
 def swapCmd (dir : NextPrev) (wrap := false) (swapFocus := false) : Cmd := .swap .focused dir wrap swapFocus
 
 #guard

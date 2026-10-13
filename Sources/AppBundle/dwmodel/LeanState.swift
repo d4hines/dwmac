@@ -127,6 +127,7 @@ enum LeanCmd {
     /// orientation puts the window first
     case moveNodeToMonitor(Target, monitor: Int, direction: CardinalDirection?, focusFollows: Bool, failIfNoop: Bool)
     case moveNodeToMaster
+    case rotate
     case swap(Target, NextPrev, wrap: Bool, swapFocus: Bool)
     case scratchpad(String)
     case layout(Target, [String])
@@ -169,6 +170,7 @@ enum LeanCmd {
                 ["moveNodeToMonitor", target(t), "\(mon)",
                  dir.map { ($0.orientation == .h ? "h" : "v") + b($0.isPositive) } ?? "-", b(focusFollows), b(failIfNoop)]
             case .moveNodeToMaster: ["moveNodeToMaster"]
+            case .rotate: ["rotate"]
             case .swap(let t, let dir, let wrap, let swapFocus):
                 ["swap", target(t), dir == .next ? "next" : "prev", b(wrap), b(swapFocus)]
             case .scratchpad(let name): ["scratchpad", name]

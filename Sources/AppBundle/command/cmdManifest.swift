@@ -57,6 +57,8 @@ extension CmdArgs {
                 command = MoveMouseCommand(args: self as! MoveMouseCmdArgs)
             case .moveNodeToMaster:
                 command = MoveNodeToMasterCommand(args: self as! MoveNodeToMasterCmdArgs)
+            case .rotate:
+                command = RotateCommand(args: self as! RotateCmdArgs)
             case .moveNodeToMonitor:
                 command = MoveNodeToMonitorCommand(args: self as! MoveNodeToMonitorCmdArgs)
             case .moveNodeToWorkspace:
