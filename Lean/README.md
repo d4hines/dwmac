@@ -44,7 +44,7 @@ overlays/dwmac/dev.sh lean   # build, check proofs and tests, regenerate C
 overlays/dwmac/dev.sh test   # ...then the Swift tests
 ```
 
-For an editor, point the Lean extension at the flake's Lean, e.g. `nix shell ~/repos/beth#darwinConfigurations.yachal.pkgs.lean4`.
+For an editor, point the Lean extension at the flake's Lean, e.g. `nix shell <beth>#darwinConfigurations.<host>.pkgs.lean4`.
 
 To check that a theorem doesn't secretly rely on `sorry`, `#print axioms masterStack_pairwise_disjoint` should list
 only `propext`, `Classical.choice` and `Quot.sound`.
