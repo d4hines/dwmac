@@ -1,5 +1,6 @@
 import DwmacCore.Command
 import DwmacCore.WindowKind
+import DwmacCore.CliCmd
 
 /-!
 # The state machine, exported to C
@@ -255,7 +256,25 @@ def Effect.render : Effect → String
 @[export dwmac_lean_state_init]
 def stateInitFfi (scratchpads : String) : State := State.init ((parseScratchpads scratchpads).getD [])
 
+/-- `cli <DWMAC_WINDOW_ID or -> <DWMAC_WORKSPACE or -> <stdin lines, \x1e separated> <args, \x1f separated>`: parse a
+command Lean runs, resolve it against the state, and run it -/
+def State.execCli (s : State) (fields : List String) : State × Reply :=
+  match fields with
+  | [windowId, workspace, stdin, raw] =>
+    let env : Env := { windowId := if windowId == "-" then none else windowId.toNat?,
+                       workspace := if workspace == "-" then none else some workspace, stdin := items stdin }
+    match Cli.parseArgs (if raw.isEmpty then [] else raw.splitOn "\x1f") with
+    | .cmd kind f => match s.cliCmd env kind f with
+      | .ok c => s.exec (.cmd c)
+      | .error e => (s, .fail e)
+    | .help text => (s, { out := text.splitOn "\n" })
+    | .fail msg => (s, .fail msg)
+  | _ => (s, .fail "dwmac bug: Lean can't parse a cli input")
+
 def State.execText (s : State) (input : String) : State × Reply :=
+  match input.splitOn "\t" with
+  | "cli" :: fields => s.execCli fields
+  | _ =>
   match parseInput input with
   | some i => s.exec i
   | none => (s, .fail s!"dwmac bug: Lean can't parse '{input}'")
@@ -307,13 +326,19 @@ def _root_.DwmacCore.WindowKind.Kind.render : WindowKind.Kind → String
   | .dialog => "dialog"
   | .popup => "popup"
 
-/-- `windowKind <facts>` (see `parseFacts`): `<window/dialog/popup> <is dialog 0/1>`. The empty string for input that
-doesn't parse -/
+/-- `windowKind <facts>` (see `parseFacts`): `<window/dialog/popup> <is dialog 0/1>`.
+`parse <command string>` and `parseArgs <args, \x1f separated>`: the parsed command (`Cli.Parsed.render`), then
+`args <args, \x1f separated>`, the arguments it was split into. The empty string for input that doesn't parse -/
 def State.query (_s : State) (input : String) : String :=
+  let args (l : List String) := "\nargs\t" ++ "\x1f".intercalate l
   match input.splitOn "\t" with
   | "windowKind" :: facts => match parseFacts facts with
     | some f => s!"{(WindowKind.kind f).render}\t{b (WindowKind.isDialog f)}"
     | none => ""
+  | ["parse", raw] => let (p, l) := Cli.parseString raw; p.render ++ args l
+  | ["parseArgs", raw] =>
+    let l := if raw.isEmpty then [] else raw.splitOn "\x1f"
+    (Cli.parseArgs l).render ++ args l
   | _ => ""
 
 @[export dwmac_lean_state_query]
