@@ -18,7 +18,6 @@ let package = Package(
         .library(name: "AppBundle", targets: ["AppBundle"]),
     ],
     dependencies: [
-        .package(path: "./ShellParserGenerated"),
         .package(url: "https://github.com/InerziaSoft/ISSoundAdditions.git", exact: "2.0.1"),
         .package(url: "https://github.com/LebJe/TOMLKit.git", exact: "0.5.5"),
         .package(url: "https://github.com/apple/swift-collections.git", exact: "1.3.0"),
@@ -57,7 +56,6 @@ let package = Package(
                 .product(name: "Collections", package: "swift-collections"),
                 .product(name: "HotKey", package: "HotKey"),
                 .product(name: "ISSoundAdditions", package: "ISSoundAdditions"),
-                .product(name: "ShellParserGenerated", package: "ShellParserGenerated"),
                 .product(name: "TOMLKit", package: "TOMLKit"),
                 .target(name: "CDwmacCore"),
                 .target(name: "Common"),

@@ -14,7 +14,6 @@ talks to macOS.
 | `Sources/CDwmacCore/` | The C shim around Lean's generated code (`generated/` is filled at build time) |
 | `Sources/Cli/`, `Sources/Common/` | The `dwmac` CLI, and what it shares with the app (argument parsing, help) |
 | `Sources/AppBundleTests/` | Tests for argument parsing and the effect interpreter; command logic is tested in Lean |
-| `ShellParserGenerated/` | The ANTLR-generated parser for the config's shell-like command syntax |
 | `axDumps/` | AX dumps of real windows, fixtures for the window/dialog/popup heuristic's tests |
 | `docs/config-examples/default-config.toml` | The default config, bundled into the app |
 | `resources/` | The app icon |
