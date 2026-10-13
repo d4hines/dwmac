@@ -102,25 +102,7 @@ end State
 /-! ## Values -/
 
 /-- `x` in thousandths, rounded half away from zero, if `x` is a decimal number (`0.5`, `-.25`, `1e-1`) -/
-def permille (x : String) : Option Int := do
-  let (neg, body) :=
-    if x.startsWith "-" then (true, (x.drop 1).toString)
-    else if x.startsWith "+" then (false, (x.drop 1).toString) else (false, x)
-  let (mant, exp) ← match (body.toLower.splitOn "e") with
-    | [m] => some (m, 0)
-    | [m, e] => (Cli.parseInt e).map (m, ·)
-    | _ => none
-  let (intPart, frac) ← match mant.splitOn "." with
-    | [i] => some (i, "")
-    | [i, f] => some (i, f)
-    | _ => none
-  if (intPart.isEmpty && frac.isEmpty) || !intPart.all Char.isDigit || !frac.all Char.isDigit then none
-  -- x = digits / 10^frac.length * 10^exp; in thousandths: digits * 10^(exp + 3) / 10^frac.length
-  let digits := (intPart ++ frac).toNat?.getD 0
-  let shift : Int := exp + 3 - frac.length
-  let (num, den) : Nat × Nat := if shift ≥ 0 then (digits * 10 ^ shift.toNat, 1) else (digits, 10 ^ (-shift).toNat)
-  let rounded := (2 * num + den) / (2 * den)
-  return if neg then -(rounded : Int) else rounded
+def permille (x : String) : Option Int := Cli.scaled x 3
 
 def layoutDesc : String → Option LayoutDesc
   | "master-stack" => some .masterStack

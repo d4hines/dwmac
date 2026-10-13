@@ -1,7 +1,6 @@
 import AppKit
 import Common
 import HotKey
-import TOMLKit
 @preconcurrency import CoreGraphics
 
 @MainActor private var activeBindings: [UInt32: [HotkeyBinding]] = [:]
@@ -44,6 +43,8 @@ import TOMLKit
     }
 }
 
+extension Key: @unchecked @retroactive Sendable {}
+
 struct HotkeyBinding: Equatable, Sendable {
     let modifiers: NSEvent.ModifierFlags
     let keyCode: Key
@@ -51,13 +52,13 @@ struct HotkeyBinding: Equatable, Sendable {
     let descriptionWithKeyCode: String
     let descriptionWithKeyNotation: String
 
-    init(_ modifiers: NSEvent.ModifierFlags, _ keyCode: Key, _ commands: [any Command], descriptionWithKeyNotation: String) {
+    init(_ modifiers: NSEvent.ModifierFlags, _ keyCode: Key, _ commands: [any Command], descriptionWithKeyNotation: String,
+         descriptionWithKeyCode: String)
+    {
         self.modifiers = modifiers
         self.keyCode = keyCode
         self.commands = commands
-        self.descriptionWithKeyCode = modifiers.isEmpty
-            ? keyCode.toString()
-            : modifiers.toString() + "-" + keyCode.toString()
+        self.descriptionWithKeyCode = descriptionWithKeyCode
         self.descriptionWithKeyNotation = descriptionWithKeyNotation
     }
 
@@ -66,48 +67,6 @@ struct HotkeyBinding: Equatable, Sendable {
             lhs.keyCode == rhs.keyCode &&
             lhs.descriptionWithKeyCode == rhs.descriptionWithKeyCode &&
             zip(lhs.commands, rhs.commands).allSatisfy { $0.equals($1) }
-    }
-}
-
-func parseBindings(_ raw: TOMLValueConvertible, _ backtrace: TomlBacktrace, _ errors: inout [TomlParseError], _ mapping: [String: Key], _ mod: String) -> [String: HotkeyBinding] {
-    guard let rawTable = raw.table else {
-        errors += [expectedActualTypeError(expected: .table, actual: raw.type, backtrace)]
-        return [:]
-    }
-    var result: [String: HotkeyBinding] = [:]
-    for (binding, rawCommand): (String, TOMLValueConvertible) in rawTable {
-        let backtrace = backtrace + .key(binding)
-        let binding = parseBinding(binding, backtrace, mapping, mod)
-            .flatMap { modifiers, key -> ParsedToml<HotkeyBinding> in
-                parseCommandOrCommands(rawCommand).toParsedToml(backtrace).map {
-                    HotkeyBinding(modifiers, key, $0, descriptionWithKeyNotation: binding)
-                }
-            }
-            .getOrNil(appendErrorTo: &errors)
-        if let binding {
-            if result.keys.contains(binding.descriptionWithKeyCode) {
-                errors.append(.semantic(backtrace, "'\(binding.descriptionWithKeyCode)' Binding redeclaration"))
-            }
-            result[binding.descriptionWithKeyCode] = binding
-        }
-    }
-    return result
-}
-
-func parseBinding(_ raw: String, _ backtrace: TomlBacktrace, _ mapping: [String: Key], _ mod: String) -> ParsedToml<(NSEvent.ModifierFlags, Key)> {
-    let effectiveRaw = mod.isEmpty ? raw : raw.replacingOccurrences(of: "mod-", with: mod + "-")
-    let rawKeys = effectiveRaw.split(separator: "-")
-    let modifiers: ParsedToml<NSEvent.ModifierFlags> = rawKeys.dropLast()
-        .mapAllOrFailure {
-            modifiersMap[String($0)].orFailure(.semantic(backtrace, "Can't parse modifiers in '\(effectiveRaw)' binding"))
-        }
-        .map { NSEvent.ModifierFlags($0) }
-    let key: ParsedToml<Key> = rawKeys.last.flatMap { mapping[String($0)] }
-        .orFailure(.semantic(backtrace, "Can't parse the key in '\(effectiveRaw)' binding"))
-    return modifiers.flatMap { modifiers -> ParsedToml<(NSEvent.ModifierFlags, Key)> in
-        key.flatMap { key -> ParsedToml<(NSEvent.ModifierFlags, Key)> in
-            .success((modifiers, key))
-        }
     }
 }
 

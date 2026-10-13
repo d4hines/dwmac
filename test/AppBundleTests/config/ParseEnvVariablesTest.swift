@@ -4,19 +4,6 @@ import XCTest
 
 @MainActor
 final class ParseEnvVariablesTest: XCTestCase {
-    func testInterpolation() {
-        testSucInterpolation("echo ${foo}", ["foo": "bar"], expected: "echo bar")
-        testSucInterpolation("echo $foo", expected: "echo $foo")
-        testSucInterpolation("echo $$foo", expected: "echo $$foo")
-        testSucInterpolation("echo $${foo}", ["foo": "bar"], expected: "echo $bar")
-        testSucInterpolation("echo $", expected: "echo $")
-
-        testFailInterpolation("echo ${foo")
-        testFailInterpolation("echo ${foo{bar}")
-        testFailInterpolation("echo ${foo$bar}")
-        testFailInterpolation("echo ${foo}")
-    }
-
     func testInherit() {
         let (config1, errors1) = parseConfig("exec.inherit-env-vars = false")
         assertEquals(errors1, [])
@@ -61,15 +48,4 @@ final class ParseEnvVariablesTest: XCTestCase {
         )
         assertEquals(errors.descriptions, ["exec.env-vars.PWD: Changing 'PWD' is not allowed"])
     }
-}
-
-private func testSucInterpolation(_ str: String, _ vars: [String: String] = [:], expected: String) {
-    let (result, errors) = str.interpolate(with: vars).getOrNils()
-    assertEquals(result, expected)
-    assertEquals(errors ?? [], [])
-}
-
-private func testFailInterpolation(_ str: String, _ vars: [String: String] = [:]) {
-    let (_, errors) = str.interpolate(with: vars).getOrNils()
-    XCTAssertNotEqual(errors ?? [], [])
 }

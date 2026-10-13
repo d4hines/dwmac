@@ -1,5 +1,8 @@
 import DwmacCore.Split
 import DwmacCore.Regex
+import DwmacCore.Toml
+import DwmacCore.Keys
+import DwmacCore.Config
 import DwmacCore.Cli
 import DwmacCore.MasterStack
 import DwmacCore.Model

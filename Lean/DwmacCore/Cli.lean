@@ -124,6 +124,27 @@ def isDouble (s : String) : Bool :=
       !e.isEmpty && e.all Char.isDigit
     mantOk && expOk
 
+/-- `x * 10^places`, rounded half away from zero, if `x` is a decimal number (`0.5`, `-.25`, `1e-1`) -/
+def scaled (x : String) (places : Nat) : Option Int := do
+  let (neg, body) :=
+    if x.startsWith "-" then (true, (x.drop 1).toString)
+    else if x.startsWith "+" then (false, (x.drop 1).toString) else (false, x)
+  let (mant, exp) ← match (body.toLower.splitOn "e") with
+    | [m] => some (m, 0)
+    | [m, e] => (Cli.parseInt e).map (m, ·)
+    | _ => none
+  let (intPart, frac) ← match mant.splitOn "." with
+    | [i] => some (i, "")
+    | [i, f] => some (i, f)
+    | _ => none
+  if (intPart.isEmpty && frac.isEmpty) || !intPart.all Char.isDigit || !frac.all Char.isDigit then none
+  -- x = digits / 10^frac.length * 10^exp, so x * 10^places = digits * 10^(exp + places) / 10^frac.length
+  let digits := (intPart ++ frac).toNat?.getD 0
+  let shift : Int := exp + places - frac.length
+  let (num, den) : Nat × Nat := if shift ≥ 0 then (digits * 10 ^ shift.toNat, 1) else (digits, 10 ^ (-shift).toNat)
+  let rounded := (2 * num + den) / (2 * den)
+  return if neg then -(rounded : Int) else rounded
+
 /-- `<monitor-pattern>`: a 1-based sequence number, `main`, `secondary`, or a regex matched against monitor names -/
 def monitorDescription (raw : String) : Except String String :=
   match parseInt raw with

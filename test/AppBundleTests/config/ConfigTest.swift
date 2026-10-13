@@ -202,7 +202,7 @@ final class ConfigTest: XCTestCase {
         let (_, errors) = parseConfig("true")
         assertEquals(
             errors.descriptions,
-            ["Error while parsing key-value pair: encountered end-of-file (at line 1, column 5)"],
+            ["Unexpected end of file in a key-value pair (at line 1, column 5)"],
         )
     }
 
@@ -392,54 +392,5 @@ final class ConfigTest: XCTestCase {
             "gaps.inner.vertical[0]: The table is expected to have a single key \'monitor\'",
             "gaps.inner.vertical[1].monitor: The table is expected to have a single key",
         ])
-    }
-
-    func testParseKeyMapping() {
-        let (config, errors) = parseConfig(
-            """
-            [key-mapping.key-notation-to-key-code]
-                q = 'q'
-                unicorn = 'u'
-
-            [mode.main.binding]
-                alt-unicorn = 'workspace wonderland'
-            """,
-        )
-        assertEquals(errors.descriptions, [])
-        assertEquals(config.keyMapping, KeyMapping(preset: .qwerty, rawKeyNotationToKeyCode: [
-            "q": .q,
-            "unicorn": .u,
-        ]))
-        let binding = HotkeyBinding(.option, .u, [cmd("workspace wonderland")])
-        assertEquals(config.modes[mainModeId]?.bindings, [binding.descriptionWithKeyCode: binding])
-
-        let (_, errors1) = parseConfig(
-            """
-            [key-mapping.key-notation-to-key-code]
-                q = 'qw'
-                ' f' = 'f'
-            """,
-        )
-        assertEquals(errors1.descriptions, [
-            "key-mapping.key-notation-to-key-code: ' f' is invalid key notation",
-            "key-mapping.key-notation-to-key-code.q: 'qw' is invalid key code",
-        ])
-
-        let (dvorakConfig, dvorakErrors) = parseConfig(
-            """
-            key-mapping.preset = 'dvorak'
-            """,
-        )
-        assertEquals(dvorakErrors, [])
-        assertEquals(dvorakConfig.keyMapping, KeyMapping(preset: .dvorak, rawKeyNotationToKeyCode: [:]))
-        assertEquals(dvorakConfig.keyMapping.resolve()["quote"], .q)
-        let (colemakConfig, colemakErrors) = parseConfig(
-            """
-            key-mapping.preset = 'colemak'
-            """,
-        )
-        assertEquals(colemakErrors, [])
-        assertEquals(colemakConfig.keyMapping, KeyMapping(preset: .colemak, rawKeyNotationToKeyCode: [:]))
-        assertEquals(colemakConfig.keyMapping.resolve()["f"], .e)
     }
 }

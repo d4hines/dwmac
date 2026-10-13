@@ -33,11 +33,7 @@ var defaultConfigUrl: URL {
 @MainActor var configUrl: URL = defaultConfigUrl
 
 struct Config: ConvenienceCopyable {
-    var configVersion: Int = 1
-    var afterLoginCommand: [any Command] = []
     var afterStartupCommand: [any Command] = []
-    var _indentForNestedContainersWithTheSameOrientation: Void = ()
-    var _nonEmptyWorkspacesRootContainersLayoutOnStartup: Void = ()
     var defaultRootContainerLayout: Layout = .masterStack
     var defaultRootContainerOrientation: DefaultContainerOrientation = .auto
     var startAtLogin: Bool = false
@@ -47,8 +43,6 @@ struct Config: ConvenienceCopyable {
     var defaultMfact: Double = 0.5
     var attachBelow: Bool = false
     var centerFloatingWindows: Bool = false
-    var keyMapping = KeyMapping()
-    var mod: String = "" // User defined modifier alias
     var execConfig: ExecConfig = ExecConfig()
 
     var onFocusChanged: [any Command] = []

@@ -1,6 +1,7 @@
 import DwmacCore.Command
 import DwmacCore.WindowKind
 import DwmacCore.CliCmd
+import DwmacCore.Config
 
 /-!
 # The state machine, exported to C
@@ -329,6 +330,7 @@ def _root_.DwmacCore.WindowKind.Kind.render : WindowKind.Kind → String
   | .popup => "popup"
 
 /-- `windowKind <facts>` (see `parseFacts`): `<window/dialog/popup> <is dialog 0/1>`.
+`config <env> <toml>`: see `Config.query`.
 `parse <command string>` and `parseArgs <args, \x1f separated>`: the parsed command (`Cli.Parsed.render`), then
 `args <args, \x1f separated>`, the arguments it was split into. The empty string for input that doesn't parse -/
 def query (input : String) : String :=
@@ -345,6 +347,7 @@ def query (input : String) : String :=
     | some f => s!"{(WindowKind.kind f).render}\t{b (WindowKind.isDialog f)}"
     | none => ""
   | ["parse", raw] => let (p, l) := Cli.parseString (Cli.unescape raw); render p ++ args l
+  | ["config", env, src] => Config.query env src
   | ["parseArgs", raw] =>
     let l := if raw.isEmpty then [] else (raw.splitOn "\x1f").map Cli.unescape
     render (Cli.parseArgs l) ++ args l
