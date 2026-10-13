@@ -180,6 +180,7 @@ def parseCmd : List String → Option Cmd
       (← parseBool focusFollows) (← parseBool failIfNoop)
   | ["moveNodeToMaster"] => some .moveNodeToMaster
   | ["rotate"] => some .rotate
+  | ["syncFocus", native, now] => return .syncFocus (if native == "-" then none else native.toNat?) (← now.toNat?)
   | ["swap", t, dir, wrap, swapFocus] =>
     return .swap (← parseTarget t) (← parseNextPrev dir) (← parseBool wrap) (← parseBool swapFocus)
   | ["scratchpad", name] => some (.scratchpad name)
@@ -204,6 +205,8 @@ def parseInput (s : String) : Option State.Input :=
 def CmdEffect.render : CmdEffect → String
   | .launch app => s!"effect\tlaunch\t{app}"
   | .prepareSummon id => s!"effect\tprepareSummon\t{id}"
+  | .nativeFocus id => s!"effect\tnativeFocus\t{id}"
+  | .recheck ms => s!"effect\trecheck\t{ms}"
 
 /-- `ok <0/1>`, then `out <line>`, `err <line>` and `effect <kind> <arg>` records -/
 def Reply.render (r : Reply) : String :=

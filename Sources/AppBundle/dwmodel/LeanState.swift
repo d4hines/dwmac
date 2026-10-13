@@ -128,6 +128,8 @@ enum LeanCmd {
     case moveNodeToMonitor(Target, monitor: Int, direction: CardinalDirection?, focusFollows: Bool, failIfNoop: Bool)
     case moveNodeToMaster
     case rotate
+    /// The window macOS says is focused (nil for a popup or no window), and the time in ms
+    case syncFocus(UInt32?, now: Int)
     case swap(Target, NextPrev, wrap: Bool, swapFocus: Bool)
     case scratchpad(String)
     case layout(Target, [String])
@@ -171,6 +173,7 @@ enum LeanCmd {
                  dir.map { ($0.orientation == .h ? "h" : "v") + b($0.isPositive) } ?? "-", b(focusFollows), b(failIfNoop)]
             case .moveNodeToMaster: ["moveNodeToMaster"]
             case .rotate: ["rotate"]
+            case .syncFocus(let native, let now): ["syncFocus", native.map(String.init) ?? "-", "\(max(now, 0))"]
             case .swap(let t, let dir, let wrap, let swapFocus):
                 ["swap", target(t), dir == .next ? "next" : "prev", b(wrap), b(swapFocus)]
             case .scratchpad(let name): ["scratchpad", name]
@@ -200,6 +203,10 @@ struct LeanReply {
         case launch(appId: String)
         /// A scratchpad window is about to be summoned: resize it while it's still hidden
         case prepareSummon(UInt32)
+        /// Ask macOS to focus the window
+        case nativeFocus(UInt32)
+        /// Report macOS's focus again in `ms` (see syncFocusWithMacos)
+        case recheck(ms: Int)
     }
     var ok = false
     var out: [String] = []
@@ -217,6 +224,8 @@ struct LeanReply {
                     switch f[1] {
                         case "launch": effects.append(.launch(appId: f[2]))
                         case "prepareSummon": if let id = UInt32(f[2]) { effects.append(.prepareSummon(id)) }
+                        case "nativeFocus": if let id = UInt32(f[2]) { effects.append(.nativeFocus(id)) }
+                        case "recheck": if let ms = Int(f[2]) { effects.append(.recheck(ms: ms)) }
                         default: break
                     }
                 default: break

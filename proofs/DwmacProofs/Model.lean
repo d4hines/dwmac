@@ -754,6 +754,7 @@ theorem raw_struct {s : State} (hinv : Inv s) (op : Op) : Struct (s.raw op) := b
   | geometryChanged geometry => exact h.congr rfl rfl rfl rfl
   | settingsChanged cfg => exact h.congr rfl rfl rfl rfl
   | setLastNonMaster ws id => exact h.congr rfl rfl rfl rfl
+  | setFocusSync seen asked => exact h.congr rfl rfl rfl rfl
 
 /-! ## The theorems -/
 

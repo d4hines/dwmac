@@ -188,3 +188,21 @@ extension Workspace {
         _ = Result { try process.run() }
     }
 }
+
+/// Keep Lean's focus and macOS's in agreement (see `syncFocus` in Lean/DwmacCore/Command.lean): report the window
+/// macOS says is focused, then do what Lean decides: ask macOS to focus Lean's window, or check again shortly
+@MainActor func syncFocusWithMacos(_ nativeFocused: Window?) {
+    if nativeFocused?.unmanaged == .popup { return }
+    nativeFocused?.macAppUnsafe.lastNativeFocusedWindowId = nativeFocused?.windowId
+    let now = Int(ProcessInfo.processInfo.systemUptime * 1000)
+    for effect in leanRun(.syncFocus(nativeFocused?.windowId, now: now), CmdIo(stdin: .emptyStdin)).effects {
+        switch effect {
+            case .nativeFocus(let id): Window.get(byId: id)?.nativeFocus()
+            case .recheck(let ms):
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(ms)) {
+                    if TrayMenuModel.shared.isEnabled { scheduleRefreshSession(.focusRecheck) }
+                }
+            case .launch, .prepareSummon: break
+        }
+    }
+}

@@ -86,6 +86,9 @@ inductive Cmd where
   | layout (t : Target) (toggleBetween : List LayoutDesc)
   | mfact (change : MfactChange)
   | fullscreen (t : Target) (tog : Toggle) (noOuterGaps failIfNoop : Bool)
+  /-- Not a CLI command: Swift reports the window macOS says is focused (`none` for a popup, or no window), and the
+  time in ms. See `syncFocus` -/
+  | syncFocus (native : Option WinId) (now : Nat)
 deriving Repr
 
 /-- What Swift does besides laying out windows -/
@@ -94,6 +97,10 @@ inductive CmdEffect where
   | launch (app : AppId)
   /-- A scratchpad window is about to be summoned: resize it while it's still hidden -/
   | prepareSummon (id : WinId)
+  /-- Ask macOS to focus the window -/
+  | nativeFocus (id : WinId)
+  /-- Report macOS's focus again (`syncFocus`) in `ms` -/
+  | recheck (ms : Nat)
 deriving DecidableEq, Repr
 
 structure Reply where
@@ -416,6 +423,55 @@ def fullscreen (s : State) (t : Target) (tog : Toggle) (noOuterGaps failIfNoop :
     -- Lean also makes it its workspace's most recent window, the one shown fullscreen
     else { ops := [.setFullscreen id on noOuterGaps] }
 
+/-! ## Focus, between dwmac and macOS
+
+Lean's focus and macOS's focus must agree: the invariant puts a summoned scratchpad on screen only while it has
+Lean's focus, and macOS only keeps it on top while it has macOS's. Both sides change focus: commands change Lean's,
+and dwmac then asks macOS to follow (`nativeFocus`), which lands asynchronously, possibly out of order; clicks and
+Cmd-Tab change macOS's, and Lean must follow. Swift reports macOS's focus with `syncFocus` on every refresh and
+after every command, and this decides who follows whom. Once reports stop changing, two reports `focusGraceMs`
+apart are enough for Lean to agree with macOS (`syncFocus_converges` in proofs/). -/
+
+/-- How long a focus request gets to land before Lean follows whatever macOS shows instead -/
+def focusGraceMs : Nat := 400
+
+/-- What to do about macOS's focus `n` -/
+inductive FocusMove where
+  /-- They agree (or Lean has no focus to ask for) -/
+  | settle
+  /-- A request for Lean's focus is still landing: check again in `ms` -/
+  | wait (ms : Nat)
+  /-- Lean moved and macOS hasn't: ask it to focus `l` -/
+  | push (l : WinId)
+  /-- macOS moved on its own (a click, Cmd-Tab), or a request didn't land in time: Lean follows -/
+  | adopt
+deriving DecidableEq, Repr
+
+/-- `lean`: Lean's focus. `seen`, `asked`: see `State.seenFocus`, `State.focusAsked` -/
+def focusMove (lean seen : Option WinId) (asked : Option (WinId × Nat)) (n now : Nat) : FocusMove :=
+  let push := match lean with
+    | none => FocusMove.settle
+    | some l => .push l
+  if lean == some n then .settle
+  else match asked with
+    | some (a, t) =>
+      if lean == some a then (if now < t + focusGraceMs then .wait (t + focusGraceMs - now) else .adopt)
+      -- macOS hasn't moved, or is still landing an older request of ours
+      else if seen == some n || a == n then push else .adopt
+    | none => if seen == some n then push else .adopt
+
+def syncFocus (s : State) (native : Option WinId) (now : Nat) : Plan :=
+  -- Popups, apps without windows, and windows Lean doesn't manage say nothing about Lean's focus
+  match native.filter (fun n => (s.window? n).isSome) with
+  | none => {}
+  | some n =>
+    match focusMove s.focusWin s.seenFocus s.focusAsked n now with
+    | .settle => { ops := [.setFocusSync (some n) none] }
+    | .wait ms => { reply := fun _ => { effects := [.recheck ms] } }
+    | .push l => { ops := [.setFocusSync (some n) (some (l, now))],
+                   reply := fun _ => { effects := [.nativeFocus l, .recheck focusGraceMs] } }
+    | .adopt => { ops := [.focusWindow n, .setFocusSync (some n) none] }
+
 def plan (s : State) : Cmd → Plan
   | .focus t to => s.focus t to
   | .focusBackAndForth => s.focusBackAndForth
@@ -433,6 +489,7 @@ def plan (s : State) : Cmd → Plan
   | .moveNodeToMonitor t mon dir focusFollows failIfNoop => s.moveNodeToMonitor t mon dir focusFollows failIfNoop
   | .moveNodeToMaster => s.moveNodeToMaster
   | .rotate => s.rotate
+  | .syncFocus native now => s.syncFocus native now
   | .swap t dir wrap swapFocus => s.swap t dir wrap swapFocus
   | .scratchpad name => s.scratchpad name
   | .layout t toggleBetween => s.layoutCmd t toggleBetween

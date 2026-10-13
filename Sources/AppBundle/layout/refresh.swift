@@ -29,7 +29,7 @@ func runRefreshSessionBlocking(
         try await $_isStartup.withValue(event.isStartup) {
             let nativeFocused = try await getNativeFocusedWindow()
             if let nativeFocused { try await debugWindowsIfRecording(nativeFocused) }
-            updateFocusCache(nativeFocused)
+            syncFocusWithMacos(nativeFocused)
 
             if shouldLayoutWorkspaces && optimisticallyPreLayoutWorkspaces { try await layoutWorkspaces() }
 
@@ -40,6 +40,7 @@ func runRefreshSessionBlocking(
             updateTrayText()
             SecureInputPanel.shared.refresh()
             try await normalizeLayoutReason()
+            syncFocusWithMacos(nativeFocused) // Closed windows may have moved Lean's focus
             if shouldLayoutWorkspaces { try await layoutWorkspaces() }
         }
     }
@@ -59,21 +60,16 @@ func runLightSession<T>(
         try await $_isStartup.withValue(event.isStartup) {
             let nativeFocused = try await getNativeFocusedWindow()
             if let nativeFocused { try await debugWindowsIfRecording(nativeFocused) }
-            updateFocusCache(nativeFocused)
-            let focusBefore = focus.windowOrNil
+            syncFocusWithMacos(nativeFocused)
 
             refreshModel()
             let result = try await body()
             refreshModel()
 
-            let focusAfter = focus.windowOrNil
-
             updateTrayText()
             SecureInputPanel.shared.refresh()
             try await layoutWorkspaces()
-            if focusBefore != focusAfter {
-                focusAfter?.nativeFocus() // syncFocusToMacOs
-            }
+            syncFocusWithMacos(nativeFocused) // Ask macOS to follow if the command moved Lean's focus
             scheduleRefreshSession(event)
             return result
         }

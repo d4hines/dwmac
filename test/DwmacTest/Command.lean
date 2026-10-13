@@ -185,6 +185,48 @@ def swapCmd (dir : NextPrev) (wrap := false) (swapFocus := false) : Cmd := .swap
   let s := go [win 1, win 2, win 3, focusW 2, .cmd (swapCmd .next (swapFocus := true))]
   order s a == [1, 3, 2] && s.focusWin == some 3
 
+/-! ## syncFocus: Lean's focus and macOS's -/
+
+def sync (n : Option WinId) (now : Nat) : Input := .cmd (.syncFocus n now)
+def kittyWin (id : WinId) : Input := .op (.windowAppeared id kitty.app a false 99)
+/-- Windows 1 and 2 tiled on `a`, kitty's window 9 hidden; macOS and Lean agree on 1 -/
+def agreed : List Input := [win 1, win 2, kittyWin 9, focusW 1, sync (some 1) 0]
+
+#guard (go agreed).seenFocus == some 1 && (go agreed).focusAsked == none
+-- A click (macOS moved on its own): Lean follows
+#guard (go (agreed ++ [sync (some 2) 10])).focusWin == some 2
+-- A command moves Lean: dwmac asks macOS to follow, then waits for it to land
+#guard (reply (agreed ++ [focusW 2]) (.syncFocus (some 1) 10)).effects == [.nativeFocus 2, .recheck focusGraceMs]
+#guard
+  let s := go (agreed ++ [focusW 2, sync (some 1) 10, sync (some 1) 100])
+  s.focusWin == some 2 && s.focusAsked == some (2, 10)
+#guard
+  let s := go (agreed ++ [focusW 2, sync (some 1) 10, sync (some 2) 100])
+  s.focusWin == some 2 && s.focusAsked == none && s.seenFocus == some 2
+-- The request didn't land in time: Lean follows macOS
+#guard (go (agreed ++ [focusW 2, sync (some 1) 10, sync (some 1) (10 + focusGraceMs)])).focusWin == some 1
+-- Popups, apps without windows, and unknown windows change nothing
+#guard (go (agreed ++ [focusW 2, sync none 10])).focusWin == some 2
+#guard (go (agreed ++ [focusW 2, sync (some 77) 10])).focusAsked == none
+-- Cmd-Tab to a hidden scratchpad's window summons it
+#guard
+  let s := go (agreed ++ [sync (some 9) 10])
+  s.focusWin == some 9 && wsOf s 9 == some a
+
+-- The bug: toggling kitty and rotating faster than macOS activates apps. Each command's request is sent, but they
+-- land out of order and Chrome (1) ends up in front while Lean still has kitty focused, on screen behind Chrome.
+-- After the grace period, Lean follows macOS: Chrome focused, kitty hidden again
+#guard
+  let spam := agreed ++ [.cmd (.scratchpad "kitty"), sync (some 1) 10, .cmd .rotate, sync (some 1) 20,
+    .cmd (.scratchpad "kitty"), sync (some 1) 30]
+  let s := go spam
+  -- Lean has kitty focused and on screen, waiting for macOS
+  s.focusWin == some 9 && wsOf s 9 == some a && s.focusAsked == some (9, 30)
+    -- macOS keeps reporting Chrome: Lean waits out the grace period, then follows
+    && (go (spam ++ [sync (some 1) 100])).focusWin == some 9
+    && (go (spam ++ [sync (some 1) 100, sync (some 1) (30 + focusGraceMs)])).focusWin == some 1
+    && wsOf (go (spam ++ [sync (some 1) 100, sync (some 1) (30 + focusGraceMs)])) 9 == some (.home "kitty")
+
 /-! ## scratchpad -/
 
 #guard (reply [] (.scratchpad "nope")).err == ["Scratchpad 'nope' isn't declared. Declare it in the config with [scratchpad.nope]"]

@@ -155,6 +155,10 @@ structure State where
   prevWs : Option WsName := none
   /-- `focus-master-or-back`: the window each workspace's master was focused from -/
   lastNonMaster : List (WsName × WinId) := []
+  /-- The window macOS last reported as focused (see `syncFocus` in Command.lean) -/
+  seenFocus : Option WinId := none
+  /-- The window dwmac last asked macOS to focus, and when (ms) -/
+  focusAsked : Option (WinId × Nat) := none
 deriving Repr, Inhabited
 
 namespace State
@@ -310,6 +314,8 @@ inductive Op where
   | settingsChanged (cfg : Settings)
   /-- `focus-master-or-back` leaves `id` for `ws`'s master -/
   | setLastNonMaster (ws : WsName) (id : WinId)
+  /-- What `syncFocus` knows about macOS's focus -/
+  | setFocusSync (seen : Option WinId) (asked : Option (WinId × Nat))
 deriving Repr
 
 def focusWorkspace (s : State) (ws : WsName) : State :=
@@ -462,6 +468,7 @@ def raw (s : State) : Op → State
   | .geometryChanged geometry => { s with geometry }
   | .settingsChanged settings => { s with settings }
   | .setLastNonMaster ws id => { s with lastNonMaster := (ws, id) :: s.lastNonMaster.filter (·.1 != ws) }
+  | .setFocusSync seen asked => { s with seenFocus := seen, focusAsked := asked }
 
 /-! ## Normalization -/
 
