@@ -169,22 +169,14 @@ final class MacApp: AbstractApp {
         }
     }
 
-    func isWindowHeuristic(_ windowId: UInt32, _ windowLevel: MacOsWindowLevel?) async throws -> Bool {
-        return try await withWindow(windowId) { [nsApp, axApp, appId] window, job in
-            window.isWindowHeuristic(axApp: axApp.threadGuarded, appId, nsApp.activationPolicy, windowLevel)
-        } == true
-    }
-
-    func getAxUiElementWindowType(_ windowId: UInt32, _ windowLevel: MacOsWindowLevel?) async throws -> AxUiElementWindowType {
-        return try await withWindow(windowId) { [nsApp, axApp, appId] window, job in
-            window.getWindowType(axApp: axApp.threadGuarded, appId, nsApp.activationPolicy, windowLevel)
-        } ?? .window
-    }
-
-    func isDialogHeuristic(_ windowId: UInt32, _ windowLevel: MacOsWindowLevel?) async throws -> Bool {
-        try await withWindow(windowId) { [appId] window, job in
-            window.isDialogHeuristic(appId, windowLevel)
-        } == true
+    /// Window, dialog or popup: the facts are read on the app's AX thread, Lean decides. nil if the window is gone
+    @MainActor
+    func windowKind(_ windowId: UInt32, _ windowLevel: MacOsWindowLevel?) async throws -> (type: AxUiElementWindowType, isDialog: Bool)? {
+        let bundleId = rawAppBundleId
+        guard let facts = try await withWindow(windowId, { [nsApp, axApp] window, job in
+            window.windowFacts(axApp: axApp.threadGuarded, bundleId, nsApp.activationPolicy, windowLevel)
+        }) else { return nil }
+        return AxUiElementWindowType.classify(facts)
     }
 
     func setNativeFullscreen(_ windowId: UInt32, _ value: Bool) {

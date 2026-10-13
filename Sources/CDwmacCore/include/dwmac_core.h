@@ -15,6 +15,8 @@ char *dwmac_state_exec(const char *input);
 char *dwmac_state_preview(const char *input);
 /// The caller frees the result
 char *dwmac_state_snapshot(void);
+/// Answer a question that doesn't change the state (see `query` in StateFfi.lean). The caller frees the result
+char *dwmac_state_query(const char *input);
 /// Where every window goes, as effects for Swift to carry out (one per line, see `Effect.render`). Proven: unless
 /// `show_all` (dwmac is disabled), a window in a scratchpad's home is only ever hidden. The caller frees the result
 char *dwmac_state_layout(bool show_all);

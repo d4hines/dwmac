@@ -34,9 +34,9 @@ func normalizeLayoutReason() async throws {
 private func validateStillPopup(_ window: Window) async throws {
     guard let window = window as? MacWindow else { return }
     let windowLevel = getWindowLevel(for: window.windowId)
-    if try await window.isWindowHeuristic(windowLevel) {
-        let isDialog = try await window.getAxUiElementWindowType(windowLevel) == .dialog
-        window.manage(on: focus.workspace, floating: isDialog)
+    guard let type = try await window.windowKind(windowLevel)?.type else { return }
+    if type != .popup {
+        window.manage(on: focus.workspace, floating: type == .dialog)
         try await tryOnWindowDetected(window)
     }
 }

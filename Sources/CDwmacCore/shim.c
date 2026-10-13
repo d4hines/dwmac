@@ -14,6 +14,7 @@ lean_object *initialize_dwmac_DwmacCore(uint8_t builtin);
 lean_object *dwmac_lean_state_init(lean_object *scratchpads);
 lean_object *dwmac_lean_state_exec(lean_object *state, lean_object *input);
 lean_object *dwmac_lean_state_preview(lean_object *state, lean_object *input);
+lean_object *dwmac_lean_state_query(lean_object *state, lean_object *input);
 lean_object *dwmac_lean_state_snapshot(lean_object *state);
 lean_object *dwmac_lean_state_layout(lean_object *state, uint8_t show_all);
 
@@ -75,6 +76,13 @@ char *dwmac_state_preview(const char *input) {
     if (!state) dwmac_state_init("");
     lean_inc_ref(state); // Consumed
     return take_string(dwmac_lean_state_preview(state, lean_mk_string(input)));
+}
+
+char *dwmac_state_query(const char *input) {
+    ensure_ready();
+    if (!state) dwmac_state_init("");
+    lean_inc_ref(state); // Consumed
+    return take_string(dwmac_lean_state_query(state, lean_mk_string(input)));
 }
 
 char *dwmac_state_snapshot(void) {

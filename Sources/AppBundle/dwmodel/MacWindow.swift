@@ -17,7 +17,7 @@ final class MacWindow: Window {
     static func getOrRegister(windowId: UInt32, macApp: MacApp) async throws -> MacWindow {
         if let existing = allWindowsMap[windowId] as? MacWindow { return existing }
         let rect = try await macApp.getAxRect(windowId)
-        let type = try await macApp.getAxUiElementWindowType(windowId, getWindowLevel(for: windowId))
+        let type = try await macApp.windowKind(windowId, getWindowLevel(for: windowId))?.type ?? .window
 
         // atomic synchronous section
         if let existing = allWindowsMap[windowId] as? MacWindow { return existing }
@@ -38,17 +38,9 @@ final class MacWindow: Window {
         return window
     }
 
-    func isWindowHeuristic(_ windowLevel: MacOsWindowLevel?) async throws -> Bool { // todo cache
-        try await macApp.isWindowHeuristic(windowId, windowLevel)
-    }
-
-    func isDialogHeuristic(_ windowLevel: MacOsWindowLevel?) async throws -> Bool { // todo cache
-        try await macApp.isDialogHeuristic(windowId, windowLevel)
-    }
-
     @MainActor
-    func getAxUiElementWindowType(_ windowLevel: MacOsWindowLevel?) async throws -> AxUiElementWindowType {
-        try await macApp.getAxUiElementWindowType(windowId, windowLevel)
+    func windowKind(_ windowLevel: MacOsWindowLevel?) async throws -> (type: AxUiElementWindowType, isDialog: Bool)? {
+        try await macApp.windowKind(windowId, windowLevel)
     }
 
     func dumpAxInfo() async throws -> [String: Json] {

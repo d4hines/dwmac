@@ -409,6 +409,13 @@ enum LeanState {
         return String(cString: raw).split(separator: "\n").compactMap(LeanEffect.init(parsing:))
     }
 
+    /// Answer a question that doesn't change the state (see `query` in Lean/DwmacCore/StateFfi.lean)
+    static func query(_ input: String) -> String {
+        guard let raw = dwmac_state_query(input) else { return "" }
+        defer { free(raw) }
+        return String(cString: raw)
+    }
+
     static var snapshot: LeanSnapshot {
         guard let raw = dwmac_state_snapshot() else { return LeanSnapshot(parsing: "") }
         defer { free(raw) }

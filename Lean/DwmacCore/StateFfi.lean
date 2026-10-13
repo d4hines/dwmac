@@ -1,4 +1,5 @@
 import DwmacCore.Command
+import DwmacCore.WindowKind
 
 /-!
 # The state machine, exported to C
@@ -10,6 +11,7 @@ Swift drives the model through text-based calls, so adding an op or a command do
   `Reply.render`). Input that doesn't parse leaves the state alone, with a failed reply
 * `dwmac_lean_state_preview state input`: the reply `exec` would give, without changing the state
 * `dwmac_lean_state_snapshot state`: the state, one record per line (see `snapshot`)
+* `dwmac_lean_state_query state input`: answer a question that doesn't change the state (see `query`)
 * `dwmac_lean_state_layout state showAll`: the layout's effects, one per line (see `Effect.render`)
 
 Whatever the input, the result is `State.exec` of some input (or the state unchanged), so `reachable_exec_inv` holds
@@ -265,6 +267,57 @@ def stateExecFfi (s : State) (input : String) : State × String :=
 
 @[export dwmac_lean_state_preview]
 def statePreviewFfi (s : State) (input : String) : String := (s.execText input).2.render
+
+/-! ## Queries -/
+
+private def parseButton : String → Option WindowKind.Button
+  | "-" => some .absent
+  | "0" => some .disabled
+  | "1" => some .enabled
+  | _ => none
+
+private def parseOptBool : String → Option (Option Bool)
+  | "-" => some none
+  | v => (parseBool v).map some
+
+private def optStr (v : String) : Option String := if v == "-" then none else some v
+
+/-- `<bundle id> <accessory 0/1> <level or -> <subrole or -> <title> <identifier or -> <close> <fullscreen> <zoom>
+<minimize> <focused> <main> <app focused 0/1>`. Buttons: `-` missing, `0` not enabled, `1` enabled; focused and
+main: `-` unknown, `0`, `1` -/
+def parseFacts : List String → Option WindowKind.Facts
+  | [app, accessory, level, subrole, title, identifier, close, fullscreen, zoom, minimize, focused, main, appFocused] => do
+    let level ← if level == "-" then pure none else some <$> level.toInt?
+    return {
+      app, title, level
+      accessory := ← parseBool accessory
+      subrole := optStr subrole
+      identifier := optStr identifier
+      close := ← parseButton close
+      fullscreen := ← parseButton fullscreen
+      zoom := ← parseButton zoom
+      minimize := ← parseButton minimize
+      focused := ← parseOptBool focused
+      main := ← parseOptBool main
+      appFocused := ← parseBool appFocused }
+  | _ => none
+
+def _root_.DwmacCore.WindowKind.Kind.render : WindowKind.Kind → String
+  | .window => "window"
+  | .dialog => "dialog"
+  | .popup => "popup"
+
+/-- `windowKind <facts>` (see `parseFacts`): `<window/dialog/popup> <is dialog 0/1>`. The empty string for input that
+doesn't parse -/
+def State.query (_s : State) (input : String) : String :=
+  match input.splitOn "\t" with
+  | "windowKind" :: facts => match parseFacts facts with
+    | some f => s!"{(WindowKind.kind f).render}\t{b (WindowKind.isDialog f)}"
+    | none => ""
+  | _ => ""
+
+@[export dwmac_lean_state_query]
+def stateQueryFfi (s : State) (input : String) : String := s.query input
 
 @[export dwmac_lean_state_snapshot]
 def stateSnapshotFfi (s : State) : String := s.snapshot
