@@ -191,9 +191,24 @@ extension Workspace {
 
 /// Keep Lean's focus and macOS's in agreement (see `syncFocus` in Lean/DwmacCore/Command.lean): report the window
 /// macOS says is focused, then do what Lean decides: ask macOS to focus Lean's window, or check again shortly
+/// The window last reported to Lean as macOS's focus
+@MainActor private var lastReportedFocus: UInt32? = nil
+
+/// Whether the window macOS last showed focused is still on screen. When it's closed or minimized, macOS picks a
+/// replacement on its own, and Lean can only tell that from a click once the window is gone from its model too
+/// (`focusMove` in Lean/DwmacCore/Command.lean). A WindowServer lookup, no AX calls
+@MainActor func lastReportedFocusIsOnScreen() -> Bool {
+    guard let id = lastReportedFocus else { return true }
+    guard let info = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(id)) as? [[String: Any]],
+          let window = info.first
+    else { return false }
+    return (window[kCGWindowIsOnscreen as String] as? Bool) ?? false
+}
+
 @MainActor func syncFocusWithMacos(_ nativeFocused: Window?) {
     if nativeFocused?.unmanaged == .popup { return }
     nativeFocused?.macAppUnsafe.lastNativeFocusedWindowId = nativeFocused?.windowId
+    if let id = nativeFocused?.windowId { lastReportedFocus = id }
     let now = Int(ProcessInfo.processInfo.systemUptime * 1000)
     for effect in leanRun(.syncFocus(nativeFocused?.windowId, now: now), CmdIo(stdin: .emptyStdin)).effects {
         switch effect {

@@ -447,8 +447,10 @@ inductive FocusMove where
   | adopt
 deriving DecidableEq, Repr
 
-/-- `lean`: Lean's focus. `seen`, `asked`: see `State.seenFocus`, `State.focusAsked` -/
-def focusMove (lean seen : Option WinId) (asked : Option (WinId × Nat)) (n now : Nat) : FocusMove :=
+/-- `lean`: Lean's focus. `seen`, `asked`: see `State.seenFocus`, `State.focusAsked`. `gone`: the window macOS last
+showed focused is gone (closed or minimized), so macOS's focus now is its own pick of a replacement, often another
+window of the same app on a hidden workspace, not the user's: Lean's pick wins (AeroSpace #1097) -/
+def focusMove (lean seen : Option WinId) (asked : Option (WinId × Nat)) (gone : Bool) (n now : Nat) : FocusMove :=
   let push := match lean with
     | none => FocusMove.settle
     | some l => .push l
@@ -457,15 +459,16 @@ def focusMove (lean seen : Option WinId) (asked : Option (WinId × Nat)) (n now 
     | some (a, t) =>
       if lean == some a then (if now < t + focusGraceMs then .wait (t + focusGraceMs - now) else .adopt)
       -- macOS hasn't moved, or is still landing an older request of ours
-      else if seen == some n || a == n then push else .adopt
-    | none => if seen == some n then push else .adopt
+      else if seen == some n || a == n || gone then push else .adopt
+    | none => if seen == some n || gone then push else .adopt
 
 def syncFocus (s : State) (native : Option WinId) (now : Nat) : Plan :=
   -- Popups, apps without windows, and windows Lean doesn't manage say nothing about Lean's focus
   match native.filter (fun n => (s.window? n).isSome) with
   | none => {}
   | some n =>
-    match focusMove s.focusWin s.seenFocus s.focusAsked n now with
+    let gone := s.seenFocus.any fun id => (s.window? id).isNone
+    match focusMove s.focusWin s.seenFocus s.focusAsked gone n now with
     | .settle => { ops := [.setFocusSync (some n) none] }
     | .wait ms => { reply := fun _ => { effects := [.recheck ms] } }
     | .push l => { ops := [.setFocusSync (some n) (some (l, now))],

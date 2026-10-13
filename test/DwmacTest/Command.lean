@@ -318,4 +318,18 @@ def W : WsName := .named "W"
     .op (.monitorsChanged [0] [])]
   s.screens == [(0, .num 1)]
 
+-- Closing the focused window: macOS focuses another window of the same app, on a hidden workspace. Lean keeps
+-- the user's workspace and asks macOS to focus its pick. AeroSpace #1097, #571, #854
+def twoSafaris : List Input := [.op (.monitorsChanged [0, 1] []), win 1 (.num 1) "safari", win 2 (.num 3) "safari",
+  win 5 (.num 1) "term", focusW 1, sync (some 1) 0]
+#guard let s := go (twoSafaris ++ [.op (.windowClosed 1)])
+  let (t, r) := s.exec (sync (some 2) 10)
+  t.focusWs == .num 1 && t.focusWin == some 5 && r.effects.contains (.nativeFocus 5)
+-- A click on that window, with nothing closed, still goes there
+#guard let (t, _) := (go twoSafaris).exec (sync (some 2) 10)
+  t.focusWs == .num 3 && t.focusWin == some 2
+-- If macOS won't focus Lean's pick, Lean follows it a grace period later
+#guard let s := go (twoSafaris ++ [.op (.windowClosed 1), sync (some 2) 10])
+  (s.exec (sync (some 2) (10 + focusGraceMs))).1.focusWin == some 2
+
 end DwmacCore.Model.CommandTest

@@ -29,7 +29,9 @@ func runRefreshSessionBlocking(
         try await $_isStartup.withValue(event.isStartup) {
             let nativeFocused = try await getNativeFocusedWindow()
             if let nativeFocused { try await debugWindowsIfRecording(nativeFocused) }
-            syncFocusWithMacos(nativeFocused)
+            // Early, so a click or Cmd-Tab shows its workspace without waiting for the refresh. Unless the window
+            // macOS showed focused is gone: then wait until the refresh tells Lean, so it knows this isn't a click
+            if lastReportedFocusIsOnScreen() { syncFocusWithMacos(nativeFocused) }
 
             if shouldLayoutWorkspaces && optimisticallyPreLayoutWorkspaces { try await layoutWorkspaces() }
 
