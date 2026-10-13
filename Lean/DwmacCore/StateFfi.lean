@@ -112,6 +112,7 @@ def parseOp (s : String) : Option State.Op :=
   | ["setFullscreen", id, on, noOuterGaps] =>
     return State.Op.setFullscreen (← id.toNat?) (← parseBool on) (← parseBool noOuterGaps)
   | ["setParked", id, parked] => return State.Op.setParked (← id.toNat?) (← parseBool parked)
+  | ["centered", id] => return State.Op.centered (← id.toNat?)
   | ["geometryChanged", geometry] => return State.Op.geometryChanged (← parseGeometry geometry)
   | ["settingsChanged", layout, mfact, masterAtStop, center, persistent] =>
     return State.Op.settingsChanged

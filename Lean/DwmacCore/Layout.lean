@@ -26,7 +26,8 @@ inductive Effect where
   | unhide (id : WinId) (monitor : IRect) (restore : Bool)
   /-- Set the window's frame. `virtual` is the workspace's rect, which mouse resizing works in -/
   | tile (id : WinId) (rect virtual : IRect) (fullscreen : Bool)
-  /-- Keep a floating window on `mon` (whose visible rect is `visible`), centering it if `center` -/
+  /-- Keep a floating window on `mon` (whose visible rect is `visible`), centering it if `center`: once after it
+  becomes floating (Swift then reports `Op.centered`), so it stays where the user drags or `move`s it -/
   | float (id : WinId) (mon : MonId) (visible : IRect) (center : Bool)
   /-- Move the window off screen, into `corner` of `visible` -/
   | hide (id : WinId) (corner : Corner) (visible : IRect)
@@ -36,6 +37,11 @@ namespace Effect
 
 def target : Effect → WinId
   | unhide id .. | tile id .. | float id .. | hide id .. => id
+
+/-- Whether the effect centers the window -/
+def centers : Effect → Bool
+  | float _ _ _ center => center
+  | _ => false
 
 /-- Whether the effect puts the window on screen -/
 def shows : Effect → Bool
@@ -85,7 +91,7 @@ def placeWs (s : State) (ws : WsName) (mon : MonId) (g : Geom) : List Effect :=
     <|> r.map fun r => .tile w.id ⟨g.padded.x + r.x, g.padded.y + r.y, r.w, r.h⟩ g.padded false
   let tileFx := (tiled.zip tiles).filterMap fun (w, r) => place w (some r)
   let floatFx := (wins.filter (fun w => w.floating && !w.parked)).map fun w =>
-    (place w none).getD (.float w.id mon g.visible s.settings.centerFloating)
+    (place w none).getD (.float w.id mon g.visible (s.settings.centerFloating && !w.centered))
   wins.map (fun w => .unhide w.id g.rect (w.floating && !w.parked)) ++ tileFx ++ floatFx
 
 /-- Hide `ws`'s windows in a corner of its monitor -/

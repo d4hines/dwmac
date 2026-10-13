@@ -23,6 +23,7 @@ enum LeanOp: Equatable {
     case mfact(String, MfactChange)
     case setFullscreen(UInt32, on: Bool, noOuterGaps: Bool)
     case setParked(UInt32, Bool)
+    case centered(UInt32)
     case geometryChanged([(monitor: Int, geometry: LeanGeometry)])
     case settingsChanged(defaultLayout: Layout, defaultMfactPermille: Int, masterAtStop: Bool, centerFloating: Bool,
                          persistent: [String])
@@ -63,6 +64,7 @@ enum LeanOp: Equatable {
             case .mfact(let ws, let change): ["mfact", ws] + change.leanFields
             case .setFullscreen(let id, let on, let noOuterGaps): ["setFullscreen", "\(id)", b(on), b(noOuterGaps)]
             case .setParked(let id, let parked): ["setParked", "\(id)", b(parked)]
+            case .centered(let id): ["centered", "\(id)"]
             case .geometryChanged(let geometry):
                 ["geometryChanged", list(geometry.map { mon, g in
                     let fields: [String] = ["\(mon)", g.rect.leanEncoded, g.visible.leanEncoded, g.padded.leanEncoded,

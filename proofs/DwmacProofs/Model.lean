@@ -675,9 +675,9 @@ theorem placeWindow_struct {s : State} (h : Struct s) (id : WinId) (ws : WsName)
 
 theorem setFloating_struct {s : State} (h : Struct s) (id : WinId) (floating : Bool) :
     Struct (s.setFloating id floating) := by
-  have hf : ∀ w : Win, (if w.id = id && (s.homeOf w.app).isNone then { w with floating } else w).id = w.id ∧
-      (if w.id = id && (s.homeOf w.app).isNone then { w with floating } else w).ws = w.ws ∧
-      (if w.id = id && (s.homeOf w.app).isNone then { w with floating } else w).app = w.app :=
+  have hf : ∀ w : Win, (if w.id = id && (s.homeOf w.app).isNone then { w with floating, centered := w.centered && floating } else w).id = w.id ∧
+      (if w.id = id && (s.homeOf w.app).isNone then { w with floating, centered := w.centered && floating } else w).ws = w.ws ∧
+      (if w.id = id && (s.homeOf w.app).isNone then { w with floating, centered := w.centered && floating } else w).app = w.app :=
     fun w => by split <;> exact ⟨rfl, rfl, rfl⟩
   refine h.withWindows ⟨idsNodup_map (fun w => (hf w).1) h.windows.idsNodup, ?_⟩
   simp only [List.mem_map]
@@ -751,6 +751,7 @@ theorem raw_struct {s : State} (hinv : Inv s) (op : Op) : Struct (s.raw op) := b
     · exact (mapWins_struct h _ _).congr rfl rfl rfl rfl
     · exact h
   | setParked id parked => exact mapWins_struct h _ _
+  | centered id => exact mapWins_struct h _ _
   | geometryChanged geometry => exact h.congr rfl rfl rfl rfl
   | settingsChanged cfg => exact h.congr rfl rfl rfl rfl
   | setLastNonMaster ws id => exact h.congr rfl rfl rfl rfl

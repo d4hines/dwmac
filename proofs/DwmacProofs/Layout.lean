@@ -34,6 +34,15 @@ theorem hideWs_hides (s : State) (ws : WsName) : ∀ e ∈ s.hideWs ws, e.shows 
     obtain ⟨_, _, rfl⟩ := he
     rfl
 
+theorem hideWs_centers (s : State) (ws : WsName) : ∀ e ∈ s.hideWs ws, e.centers = false := by
+  intro e he
+  simp only [hideWs] at he
+  split at he
+  · simp at he
+  · simp only [List.mem_map] at he
+    obtain ⟨_, _, rfl⟩ := he
+    rfl
+
 /-- **Only shown workspaces' windows are put on screen**: unless dwmac is disabled, every effect that shows a window
 is about a window of a shown workspace -/
 theorem layout_shows_visible (s : State) :
@@ -47,7 +56,53 @@ theorem layout_shows_visible (s : State) :
     · simp at he
   · rw [s.hideWs_hides ws e he] at hs; contradiction
 
+/-- Every effect of `placeWs` that centers a window is about a window `center-floating-windows` hasn't centered yet -/
+theorem placeWs_centers (s : State) (ws : WsName) (mon : MonId) (g : Geom) :
+    ∀ e ∈ s.placeWs ws mon g, e.centers = true → ∃ w ∈ s.windows, w.id = e.target ∧ w.centered = false := by
+  intro e he hc
+  obtain ⟨_, _, _, rfl⟩ : ∃ id m v, e = .float id m v true := by cases e <;> simp_all [Effect.centers]
+  simp only [placeWs, List.mem_append, List.mem_map, List.mem_filterMap] at he
+  rcases he with (⟨w, _, he⟩ | ⟨⟨w, r⟩, _, he⟩) | ⟨w, hw, he⟩
+  · simp at he
+  · revert he; split <;> (try split) <;> simp
+  · simp only [List.mem_filter] at hw
+    refine ⟨w, hw.1.1, ?_⟩
+    revert he; split <;> (try split) <;> simp_all [Effect.target]
+
+/-- **`center-floating-windows` centers a window once**: every effect of the layout that centers a window is about a
+window that isn't marked centered. Swift marks it (`Op.centered`) once it has centered it, so it then stays where the
+user drags or `move`s it, until it stops floating -/
+theorem layout_centers_uncentered (s : State) (showAll : Bool) :
+    ∀ e ∈ s.layout showAll, e.centers = true → ∃ w ∈ s.windows, w.id = e.target ∧ w.centered = false := by
+  intro e he hc
+  unfold layout at he
+  split at he
+  · simp only [List.mem_flatMap] at he
+    obtain ⟨ws, _, he⟩ := he
+    split at he
+    · exact s.placeWs_centers ws _ _ e he hc
+    · simp at he
+  · simp only [List.mem_append, List.mem_flatMap] at he
+    rcases he with ⟨⟨mon, ws⟩, _, he⟩ | ⟨ws, _, he⟩
+    · split at he
+      · exact s.placeWs_centers ws mon _ e he hc
+      · simp at he
+    · rw [hideWs_centers s ws e he] at hc; contradiction
+
 end State
+
+/-- After Swift reports it centered window `id`, the layout doesn't center it again -/
+theorem State.centered_not_recentered (s : State) (id : WinId) (showAll : Bool) :
+    ∀ e ∈ (s.raw (.centered id)).layout showAll, e.target = id → e.centers = false := by
+  intro e he hid
+  cases hc : e.centers
+  · rfl
+  · obtain ⟨w, hw, hwid, hwc⟩ := State.layout_centers_uncentered _ showAll e he hc
+    simp only [State.raw, State.mapWins, List.mem_map] at hw
+    obtain ⟨w0, _, rfl⟩ := hw
+    split at hwc
+    · simp at hwc
+    · rename_i hne; simp_all
 
 /-- In a state with the invariant, the layout never puts a window that's in a scratchpad's home on screen -/
 theorem State.layout_hides_homes {s : State} (hinv : Inv s) :

@@ -38,6 +38,7 @@ extension Window {
             if let size = try await getAxSize() ?? lastFloatingSize {
                 setAxFrame(CGPoint(x: visible.topLeftX + (visible.width - size.width) / 2,
                                    y: visible.topLeftY + (visible.height - size.height) / 2), nil)
+                leanApply(.centered(windowId)) // Once: then it stays where the user puts it
             }
         } else if lastLayoutMonitor != monitor {
             // Its workspace moved to another monitor: take the window along, at the same relative position. Only then,

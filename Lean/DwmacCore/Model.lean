@@ -73,6 +73,8 @@ structure Win where
   fullscreen : Option Bool := none
   /-- macOS took it off the layout (native fullscreen, or its app is hidden). It still belongs to its workspace -/
   parked : Bool := false
+  /-- `center-floating-windows` centered it since it last became floating: it stays where the user puts it -/
+  centered : Bool := false
 deriving DecidableEq, Repr, Inhabited
 
 /-- A rect in global coordinates: (0, 0) is the main monitor's top left corner, y grows downwards -/
@@ -310,6 +312,8 @@ inductive Op where
   | setFullscreen (id : WinId) (on : Bool) (noOuterGaps : Bool)
   /-- macOS took the window off the layout (native fullscreen, hidden app), or gave it back -/
   | setParked (id : WinId) (parked : Bool)
+  /-- Swift centered a floating window, as the layout asked (`center-floating-windows`) -/
+  | centered (id : WinId)
   | geometryChanged (geometry : List (MonId × Geom))
   | settingsChanged (cfg : Settings)
   /-- `focus-master-or-back` leaves `id` for `ws`'s master -/
@@ -391,11 +395,12 @@ def placeWindow (s : State) (id : WinId) (ws : WsName) (index : Nat) (floating :
     if isScratchpad && w.ws != ws || ws.isHome && !isScratchpad then s
     else
       let floating := isScratchpad || floating.getD w.floating
-      { s with windows := insertInWs { w with ws, floating, parked := false } (s.windows.filter (·.id != id)) index }
+      let centered := w.centered && floating
+      { s with windows := insertInWs { w with ws, floating, centered, parked := false } (s.windows.filter (·.id != id)) index }
 
 def setFloating (s : State) (id : WinId) (floating : Bool) : State :=
   { s with windows := s.windows.map fun w =>
-      if w.id = id && (s.homeOf w.app).isNone then { w with floating } else w }
+      if w.id = id && (s.homeOf w.app).isNone then { w with floating, centered := w.centered && floating } else w }
 
 /-- Add `mon`, showing a stub, unless it's already there -/
 def addScreen (s : State) (mon : MonId) : State :=
@@ -465,6 +470,7 @@ def raw (s : State) : Op → State
   | .mfact ws change => s.mfact ws change
   | .setFullscreen id on noOuterGaps => s.setFullscreen id on noOuterGaps
   | .setParked id parked => { s with windows := s.mapWins (·.id == id) ({ · with parked }) }
+  | .centered id => { s with windows := s.mapWins (·.id == id) ({ · with centered := true }) }
   | .geometryChanged geometry => { s with geometry }
   | .settingsChanged settings => { s with settings }
   | .setLastNonMaster ws id => { s with lastNonMaster := (ws, id) :: s.lastNonMaster.filter (·.1 != ws) }

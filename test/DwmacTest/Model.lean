@@ -129,3 +129,19 @@ def runText (inputs : List String) : State := inputs.foldl (fun s i => (s.execTe
 #guard ((init []).execText "nonsense").1.snapshot == (init []).snapshot
 
 end DwmacCore.Model.Test
+
+namespace DwmacCore.Model.Test
+open State
+
+-- center-floating-windows: a floating window is centered until Swift reports it did, then stays where the user puts
+-- it; floating again after tiling centers it again
+def centering : List Op := [.settingsChanged { centerFloating := true }, .windowAppeared 1 "a" (.num 1) true 0]
+def centers (ops : List Op) : Bool := (laidOut (centering ++ ops)).any (·.centers)
+#guard centers []
+#guard !centers [.centered 1]
+#guard !centers [.centered 1, .focusWorkspace (.num 2), .focusWorkspace (.num 1)]
+#guard !centers [.centered 1, .setFloating 1 false]
+#guard centers [.centered 1, .setFloating 1 false, .setFloating 1 true]
+#guard !(laidOut [.windowAppeared 1 "a" (.num 1) true 0]).any (·.centers)
+
+end DwmacCore.Model.Test
