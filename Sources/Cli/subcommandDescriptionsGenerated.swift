@@ -11,7 +11,7 @@ let subcommandDescriptions = [
     ["  focus-master-or-back", "Toggle focus between the master window and the previously focused non-master window"],
     ["  focus-monitor", "Focus monitor by relative direction, by order, or by pattern"],
     ["  focus", "Set focus to a window."],
-    ["  fullscreen", "Toggle the fullscreen mode for the focused window"],
+    ["  fullscreen", "Toggle monocle on the focused workspace: every tiled window fills it"],
     ["  layout", "Change layout of the focused window to the given layout"],
     ["  list-apps", "Print the list of running applications that appears in the Dock and may have a user interface"],
     ["  list-exec-env-vars", "List environment variables that exec-* commands and callbacks are run with"],

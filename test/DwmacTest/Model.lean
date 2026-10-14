@@ -88,13 +88,16 @@ def laidOut (ops : List Op) : List Effect := (run (.geometryChanged [(0, geom)] 
   [.unhide 1 geom.rect false, .unhide 2 geom.rect false, .tile 1 ⟨0, 0, 955, 1079⟩ geom.padded false,
     .tile 2 ⟨965, 0, 955, 1079⟩ geom.padded false, .hide 3 .bottomRight geom.visible, .hide 4 .bottomRight geom.visible]
 
--- Fullscreen covers the workspace while it's the most recent window; floating windows float; parked ones only unhide
+-- Monocle covers the workspace with every tiled window, whichever is focused; floating windows float; off tiles again
 #guard
-  let fx := laidOut [.windowAppeared 1 "a" (.num 1) false 0, .windowAppeared 2 "b" (.num 1) false 9,
-    .setFullscreen 2 true false, .focusWindow 1]
-  fx.contains (.tile 1 ⟨0, 0, 955, 1079⟩ geom.padded false) && fx.contains (.tile 2 ⟨965, 0, 955, 1079⟩ geom.padded false)
-#guard (laidOut [.windowAppeared 1 "a" (.num 1) false 0, .windowAppeared 2 "b" (.num 1) false 9,
-    .setFullscreen 2 true false]).contains (.tile 2 geom.padded geom.padded true)
+  let ops : List Op := [.windowAppeared 1 "a" (.num 1) false 0, .windowAppeared 2 "b" (.num 1) false 9,
+    .windowAppeared 3 "c" (.num 1) true 9, .setMonocle (.num 1) (some false)]
+  let fx := laidOut ops
+  fx.contains (.tile 1 geom.padded geom.padded true) && fx.contains (.tile 2 geom.padded geom.padded true)
+    && fx.contains (.float 3 0 geom.visible false)
+    && laidOut (ops ++ [.focusWindow 1]) == fx && laidOut (ops ++ [.focusWindow 2]) == fx
+    && (laidOut (ops ++ [.setMonocle (.num 1) none])).contains (.tile 1 ⟨0, 0, 955, 1079⟩ geom.padded false)
+-- Parked ones only unhide
 #guard (laidOut [.windowAppeared 1 "a" (.num 1) true 0]) == [.unhide 1 geom.rect true, .float 1 0 geom.visible false]
 #guard (laidOut [.windowAppeared 1 "a" (.num 1) false 0, .setParked 1 true]) == [.unhide 1 geom.rect false]
 #guard (laidOut [.windowAppeared 1 "a" (.num 1) false 0, .setLayout (.num 1) (some .floating) none]) == [.unhide 1 geom.rect false]

@@ -110,8 +110,7 @@ def parseOp (s : String) : Option State.Op :=
   | ["setLayout", ws, layout, orientation] =>
     return State.Op.setLayout (.parse ws) (← parseOpt parseLayout layout) (← parseOpt parseOrientation orientation)
   | ["mfact", ws, kind, amount] => return State.Op.mfact (.parse ws) (← parseMfactChange kind amount)
-  | ["setFullscreen", id, on, noOuterGaps] =>
-    return State.Op.setFullscreen (← id.toNat?) (← parseBool on) (← parseBool noOuterGaps)
+  | ["setMonocle", ws, on] => return State.Op.setMonocle (.parse ws) (← parseOpt parseBool on)
   | ["setParked", id, parked] => return State.Op.setParked (← id.toNat?) (← parseBool parked)
   | ["centered", id] => return State.Op.centered (← id.toNat?)
   | ["geometryChanged", geometry] => return State.Op.geometryChanged (← parseGeometry geometry)
@@ -222,7 +221,7 @@ def WsProps.render (p : WsProps) : String := s!"{p.layout.render}\t{p.orientatio
 
 /-- One record per line, fields separated by tabs:
 `focus <ws> <window id or ->`, then `screen <monitor> <ws>` per monitor (main first), then
-`window <id> <ws> <floating 0/1> <fullscreen: -, or no outer gaps 0/1> <parked 0/1>` per window in tiling order,
+`window <id> <ws> <floating 0/1> <fullscreen (tiled on a monocle workspace): -, or no outer gaps 0/1> <parked 0/1>` per window in tiling order,
 then `mru <ids, most recent first, comma separated>`, `prev <ws or -> <window id or ->` (the focus before the last
 change), `assigned <ws\x1fmonitor items>` (the connected monitor each workspace was last shown on), then
 `wsdefault <layout> <orientation> <mfact permille>` and
@@ -231,7 +230,9 @@ def State.snapshot (s : State) : String :=
   let focus := s!"focus\t{s.focusWs.render}\t{(s.focusWin.map toString).getD "-"}"
   let screens := s.screens.map fun (m, ws) => s!"screen\t{m}\t{ws.render}"
   let windows := s.windows.map fun w =>
-    s!"window\t{w.id}\t{w.ws.render}\t{b w.floating}\t{(w.fullscreen.map b).getD "-"}\t{b w.parked}"
+    let p := s.props w.ws
+    let full := if w.floating || w.parked || p.layout != .masterStack then none else p.monocle
+    s!"window\t{w.id}\t{w.ws.render}\t{b w.floating}\t{(full.map b).getD "-"}\t{b w.parked}"
   let mru := s!"mru\t{",".intercalate (s.mru.map toString)}"
   let prev := match s.prevFocus with
     | some (ws, win) => s!"prev\t{ws.render}\t{(win.map toString).getD "-"}"

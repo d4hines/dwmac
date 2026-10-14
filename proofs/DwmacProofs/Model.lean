@@ -772,10 +772,7 @@ theorem raw_struct {s : State} (hinv : Inv s) (op : Op) : Struct (s.raw op) := b
   | configChanged scratchpads forced => exact configChanged_struct h hinv.focusWs_not_home scratchpads forced
   | setLayout ws layout orientation => exact h.setProps ..
   | mfact ws change => exact h.setProps ..
-  | setFullscreen id on noOuterGaps =>
-    simp only [State.raw, State.setFullscreen]; split
-    · exact (mapWins_struct h _ _).congr rfl rfl rfl rfl
-    · exact h
+  | setMonocle ws on => exact h.setProps ..
   | setParked id parked => exact (mapWins_struct h _ _).congr rfl rfl rfl rfl
   | centered id => exact mapWins_struct h _ _
   | geometryChanged geometry => exact h.congr rfl rfl rfl rfl

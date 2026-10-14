@@ -263,10 +263,18 @@ def mfactAfter (change : MfactChange) : Nat := ((go [win 1, focusW 1, .cmd (.mfa
 #guard !(reply [win 1, focusW 1, .op (.setLayout a (some .floating) none)] (.mfact (.add 100))).ok
 
 def fullscreenCmd (tog : Toggle) (failIfNoop := false) : Cmd := .fullscreen .focused tog false failIfNoop
+-- `fullscreen` toggles monocle on the workspace, even an empty one
 #guard
   let s := [win 1, win 2, focusW 1]
-  ((go (s ++ [.cmd (fullscreenCmd .toggle)])).window? 1).bind (·.fullscreen) == some false
-    && ((go (s ++ [.cmd (fullscreenCmd .toggle), .cmd (fullscreenCmd .toggle)])).window? 1).bind (·.fullscreen) == none
+  ((go (s ++ [.cmd (fullscreenCmd .toggle)])).props a).monocle == some false
+    && ((go (s ++ [.cmd (fullscreenCmd .toggle), .cmd (fullscreenCmd .toggle)])).props a).monocle == none
+#guard ((go [.cmd (fullscreenCmd .on)]).props (go []).focusWs).monocle == some false
+-- --window-id picks that window's workspace
+#guard ((go [win 1, win 2 b, focusW 1, .cmd (.fullscreen (.window 2 false) .toggle true false)]).props b).monocle == some true
+-- Rotating keeps monocle on: every window takes a turn in front
+#guard
+  let s := [win 1, win 2, win 3, focusW 1, .cmd (fullscreenCmd .toggle)]
+  ((go (s ++ [.cmd .rotate])).props a).monocle == some false && focuses s [.rotate, .rotate, .rotate] == [some 3, some 2, some 1]
 #guard (reply [win 1, focusW 1] (fullscreenCmd .off)).err ==
   ["Already not fullscreen. Tip: use --fail-if-noop to exit with non-zero code"]
 #guard reply [win 1, focusW 1] (fullscreenCmd .off true) == { ok := false }

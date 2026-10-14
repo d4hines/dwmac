@@ -21,7 +21,6 @@ enum LeanOp: Equatable {
     case configChanged(scratchpads: [(name: String, appId: String)], forced: [String: Int])
     case setLayout(String, Layout?, Orientation?)
     case mfact(String, MfactChange)
-    case setFullscreen(UInt32, on: Bool, noOuterGaps: Bool)
     case setParked(UInt32, Bool)
     case centered(UInt32)
     case geometryChanged([(monitor: Int, geometry: LeanGeometry)])
@@ -62,7 +61,6 @@ enum LeanOp: Equatable {
             case .setLayout(let ws, let layout, let orientation):
                 ["setLayout", ws, layout?.rawValue ?? "-", orientation.map { $0 == .h ? "h" : "v" } ?? "-"]
             case .mfact(let ws, let change): ["mfact", ws] + change.leanFields
-            case .setFullscreen(let id, let on, let noOuterGaps): ["setFullscreen", "\(id)", b(on), b(noOuterGaps)]
             case .setParked(let id, let parked): ["setParked", "\(id)", b(parked)]
             case .centered(let id): ["centered", "\(id)"]
             case .geometryChanged(let geometry):
@@ -216,7 +214,7 @@ struct LeanSnapshot: Equatable {
         let id: UInt32
         let workspace: String
         let isFloating: Bool
-        /// dwmac's `fullscreen`: whether it has no outer gaps
+        /// Tiled on a workspace in monocle (dwmac's `fullscreen`): whether it has no outer gaps
         var fullscreen: Bool? = nil
         /// macOS took it off the layout (native fullscreen, or its app is hidden)
         var parked: Bool = false

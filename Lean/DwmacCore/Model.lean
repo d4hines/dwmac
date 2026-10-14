@@ -20,8 +20,8 @@ Every command and event is an `Op`. `step` applies one in three stages:
 about: a scratchpad home is never shown, and a scratchpad window outside its home is on the focused workspace and
 its scratchpad has focus (so macOS keeps it on top).
 
-The state also holds what the layout needs (`Layout.lean` turns it into frames): each workspace's layout and mfact,
-fullscreen windows, and the monitors' geometry.
+The state also holds what the layout needs (`Layout.lean` turns it into frames): each workspace's layout, mfact and
+monocle (`fullscreen`), and the monitors' geometry.
 -/
 
 namespace DwmacCore.Model
@@ -69,9 +69,6 @@ structure Win where
   app : AppId
   ws : WsName
   floating : Bool
-  /-- dwmac's `fullscreen` (not macOS's): `some noOuterGaps`. Shown fullscreen while it's its workspace's most
-  recent window -/
-  fullscreen : Option Bool := none
   /-- macOS took it off the layout (native fullscreen, or its app is hidden). It still belongs to its workspace -/
   parked : Bool := false
   /-- `center-floating-windows` centered it since it last became floating: it stays where the user puts it -/
@@ -108,6 +105,9 @@ structure WsProps where
   layout : WsLayout
   orientation : Orientation
   mfactPermille : Nat
+  /-- dwmac's `fullscreen` (not macOS's), xmonad's `Full`: every tiled window covers the workspace, and the focused
+  one is in front. `some noOuterGaps` -/
+  monocle : Option Bool := none
 deriving DecidableEq, Repr, Inhabited
 
 /-- Settings from the config that the invariant doesn't care about -/
@@ -322,8 +322,8 @@ inductive Op where
   /-- `layout`: change `ws`'s layout and/or orientation -/
   | setLayout (ws : WsName) (layout : Option WsLayout) (orientation : Option Orientation)
   | mfact (ws : WsName) (change : MfactChange)
-  /-- `fullscreen`. Makes the window its workspace's most recent, so it's the one shown fullscreen -/
-  | setFullscreen (id : WinId) (on : Bool) (noOuterGaps : Bool)
+  /-- `fullscreen`: `ws`'s tiled windows each cover it (`some noOuterGaps`), or are tiled again (`none`) -/
+  | setMonocle (ws : WsName) (on : Option Bool)
   /-- macOS took the window off the layout (native fullscreen, hidden app), or gave it back -/
   | setParked (id : WinId) (parked : Bool)
   /-- Swift centered a floating window, as the layout asked (`center-floating-windows`) -/
@@ -469,11 +469,7 @@ def mfact (s : State) (ws : WsName) (change : MfactChange) : State :=
     | .sub v => p.mfactPermille - v
   s.setProps ws { p with mfactPermille := max 50 (min 950 m) }
 
-def setFullscreen (s : State) (id : WinId) (on noOuterGaps : Bool) : State :=
-  if s.windows.any (·.id == id) then
-    { s with windows := s.mapWins (·.id == id) ({ · with fullscreen := if on then some noOuterGaps else none }),
-             mru := id :: s.mru.erase id }
-  else s
+def setMonocle (s : State) (ws : WsName) (on : Option Bool) : State := s.setProps ws { s.props ws with monocle := on }
 
 def raw (s : State) : Op → State
   | .focusWindow id => s.focusWindow id
@@ -498,7 +494,7 @@ def raw (s : State) : Op → State
     let p := s.props ws
     s.setProps ws { p with layout := layout.getD p.layout, orientation := orientation.getD p.orientation }
   | .mfact ws change => s.mfact ws change
-  | .setFullscreen id on noOuterGaps => s.setFullscreen id on noOuterGaps
+  | .setMonocle ws on => s.setMonocle ws on
   | .setParked id parked =>
     -- A window macOS takes away loses focus (`fixFocus` picks another); macOS reports it if it keeps focus
     { s with windows := s.mapWins (·.id == id) ({ · with parked }),

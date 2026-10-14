@@ -84,7 +84,6 @@ extension Window {
     @MainActor var isParked: Bool { lean?.parked ?? false }
     /// dwmac's `fullscreen` (Lean shows it fullscreen while it's its workspace's most recent window)
     @MainActor var isFullscreen: Bool { lean?.fullscreen != nil }
-    @MainActor var noOuterGapsInFullscreen: Bool { lean?.fullscreen == true }
     /// Its position among its workspace's windows
     @MainActor var ownIndex: Int? {
         lean.flatMap { lean in LeanState.last.windows(in: lean.workspace).firstIndex { $0.id == windowId } }

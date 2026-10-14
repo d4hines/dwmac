@@ -68,30 +68,22 @@ def hideCorner (s : State) (g : Geom) : Corner :=
       score (maxX + 2, maxY - yOff) (maxX - xOff, maxY + 2) (maxX + 2, maxY + 2)
   then .bottomLeft else .bottomRight
 
-/-- The window shown fullscreen on `ws`, if any: its most recent window, if it's fullscreen -/
-def fullscreenOn (s : State) (ws : WsName) : Option (WinId × Bool) :=
-  (s.mruWin ws).bind fun id => (s.window? id).bind fun w => if w.parked then none else w.fullscreen.map (id, ·)
-
 /-- Where `ws`'s windows go when it's shown on `mon` -/
 def placeWs (s : State) (ws : WsName) (mon : MonId) (g : Geom) : List Effect :=
   let wins := s.windows.filter (·.ws == ws)
   let p := s.props ws
-  let full := s.fullscreenOn ws
-  let fullRect (noOuterGaps : Bool) := if noOuterGaps then g.visible else g.padded
   let tiled := if p.layout == .masterStack then wins.filter (fun w => !w.floating && !w.parked) else []
   -- One point shorter than the workspace, as dwmac always did
   let tiles := masterStack
     { w := g.padded.w, h := g.padded.h - 1, gapH := g.gapH, gapV := g.gapV, mfactPermille := p.mfactPermille,
       orientation := p.orientation, masterPosition := if s.settings.masterAtStop then .stop else .start }
     tiled.length
-  let place (w : Win) (r : Option Rect) : Option Effect :=
-    match full with
-    | some (id, noOuterGaps) => if id == w.id then some (.tile w.id (fullRect noOuterGaps) g.padded true) else none
-    | none => none
-    <|> r.map fun r => .tile w.id ⟨g.padded.x + r.x, g.padded.y + r.y, r.w, r.h⟩ g.padded false
-  let tileFx := (tiled.zip tiles).filterMap fun (w, r) => place w (some r)
+  -- Monocle: every tiled window covers the workspace; macOS keeps the focused one in front
+  let tileFx := (tiled.zip tiles).map fun (w, r) => match p.monocle with
+    | some noOuterGaps => .tile w.id (if noOuterGaps then g.visible else g.padded) g.padded true
+    | none => .tile w.id ⟨g.padded.x + r.x, g.padded.y + r.y, r.w, r.h⟩ g.padded false
   let floatFx := (wins.filter (fun w => w.floating && !w.parked)).map fun w =>
-    (place w none).getD (.float w.id mon g.visible (s.settings.centerFloating && !w.centered))
+    .float w.id mon g.visible (s.settings.centerFloating && !w.centered)
   wins.map (fun w => .unhide w.id g.rect (w.floating && !w.parked)) ++ tileFx ++ floatFx
 
 /-- Hide `ws`'s windows in a corner of its monitor -/

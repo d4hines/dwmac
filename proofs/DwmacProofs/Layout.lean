@@ -1,5 +1,6 @@
 import DwmacCore.Layout
 import DwmacProofs.Model
+import DwmacProofs.MasterStack
 
 /-! # The layout only shows windows of shown workspaces, so never a scratchpad's home -/
 
@@ -11,19 +12,18 @@ namespace State
 theorem placeWs_target (s : State) (ws : WsName) (mon : MonId) (g : Geom) :
     ∀ e ∈ s.placeWs ws mon g, ∃ w ∈ s.windows, w.id = e.target ∧ w.ws = ws := by
   intro e he
-  simp only [placeWs, List.mem_append, List.mem_map, List.mem_filterMap] at he
-  rcases he with (⟨w, hw, rfl⟩ | ⟨⟨w, r⟩, hwr, he⟩) | ⟨w, hw, rfl⟩
+  simp only [placeWs, List.mem_append, List.mem_map] at he
+  rcases he with (⟨w, hw, rfl⟩ | ⟨⟨w, r⟩, hwr, rfl⟩) | ⟨w, hw, rfl⟩
   · simp only [List.mem_filter, beq_iff_eq] at hw
     exact ⟨w, hw.1, rfl, hw.2⟩
   · have hw := (List.of_mem_zip hwr).1
     split at hw
     · simp only [List.mem_filter, beq_iff_eq] at hw
       refine ⟨w, hw.1.1, ?_, hw.1.2⟩
-      revert he; split <;> (try split) <;> intro he <;> simp at he <;> (try obtain ⟨_, rfl⟩ := he) <;> (try subst he) <;> rfl
+      split <;> simp [Effect.target]
     · simp at hw
   · simp only [List.mem_filter, beq_iff_eq] at hw
-    refine ⟨w, hw.1.1, ?_, hw.1.2⟩
-    split <;> (try split) <;> simp [Effect.target]
+    exact ⟨w, hw.1.1, rfl, hw.1.2⟩
 
 theorem hideWs_hides (s : State) (ws : WsName) : ∀ e ∈ s.hideWs ws, e.shows = false := by
   intro e he
@@ -61,13 +61,13 @@ theorem placeWs_centers (s : State) (ws : WsName) (mon : MonId) (g : Geom) :
     ∀ e ∈ s.placeWs ws mon g, e.centers = true → ∃ w ∈ s.windows, w.id = e.target ∧ w.centered = false := by
   intro e he hc
   obtain ⟨_, _, _, rfl⟩ : ∃ id m v, e = .float id m v true := by cases e <;> simp_all [Effect.centers]
-  simp only [placeWs, List.mem_append, List.mem_map, List.mem_filterMap] at he
+  simp only [placeWs, List.mem_append, List.mem_map] at he
   rcases he with (⟨w, _, he⟩ | ⟨⟨w, r⟩, _, he⟩) | ⟨w, hw, he⟩
   · simp at he
-  · revert he; split <;> (try split) <;> simp
+  · revert he; split <;> simp
   · simp only [List.mem_filter] at hw
     refine ⟨w, hw.1.1, ?_⟩
-    revert he; split <;> (try split) <;> simp_all [Effect.target]
+    simp_all [Effect.target]
 
 /-- **`center-floating-windows` centers a window once**: every effect of the layout that centers a window is about a
 window that isn't marked centered. Swift marks it (`Op.centered`) once it has centered it, so it then stays where the
@@ -119,5 +119,27 @@ theorem layout_never_shows_home (scratchpads : List Scratchpad) (ops : List Stat
     let s := ops.foldl State.step (State.init scratchpads)
     ∀ e ∈ s.layout false, e.shows = true → ∀ w ∈ s.windows, w.id = e.target → w.ws.isHome = false :=
   State.layout_hides_homes (reachable_inv scratchpads ops)
+
+namespace State
+
+/-- **A workspace's layout doesn't depend on focus**: so in monocle, `rotate` and `focus` only change which window
+macOS keeps in front, and every window keeps covering the workspace -/
+theorem placeWs_focus_irrelevant (s : State) (ws : WsName) (mon : MonId) (g : Geom) (fws : WsName)
+    (fw : Option WinId) (mru : List WinId) :
+    ({ s with focusWs := fws, focusWin := fw, mru } : State).placeWs ws mon g = s.placeWs ws mon g := rfl
+
+/-- **Monocle covers the workspace with every tiled window** (dwmac's `fullscreen`, xmonad's `Full`) -/
+theorem placeWs_monocle (s : State) (ws : WsName) (mon : MonId) (g : Geom) (noOuterGaps : Bool)
+    (hm : (s.props ws).monocle = some noOuterGaps) (hl : (s.props ws).layout = .masterStack)
+    (w : Win) (hw : w ∈ s.windows) (hws : w.ws = ws) (hf : w.floating = false) (hp : w.parked = false) :
+    .tile w.id (if noOuterGaps then g.visible else g.padded) g.padded true ∈ s.placeWs ws mon g := by
+  simp only [placeWs, hl, hm, List.mem_append, List.mem_map]
+  left; right
+  have hmem : w ∈ s.windows.filter (fun a => !a.floating && !a.parked && a.ws == ws) := by simp [hw, hws, hf, hp]
+  obtain ⟨i, hi, hwi⟩ := List.getElem_of_mem hmem
+  refine ⟨_, List.getElem_mem (l := List.zip _ _) (n := i) (by simpa [DwmacCore.masterStack_length] using hi), ?_⟩
+  simp [hwi]
+
+end State
 
 end DwmacCore.Model

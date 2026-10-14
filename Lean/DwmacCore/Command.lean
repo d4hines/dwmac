@@ -412,16 +412,14 @@ def mfactPlan (s : State) (change : MfactChange) : Plan :=
 def fullscreen (s : State) (t : Target) (tog : Toggle) (noOuterGaps failIfNoop : Bool) : Plan :=
   match s.resolve t with
   | .error e => .fail e
-  | .ok (_, none) => .fail noWindowIsFocused
-  | .ok (_, some id) =>
-    let isOn := ((s.window? id).bind (·.fullscreen)).isSome
+  | .ok (ws, _) =>
+    let isOn := (s.props ws).monocle.isSome
     let on := match tog with
       | .on => true
       | .off => false
       | .toggle => !isOn
     if on == isOn then .noop (if on then "Already fullscreen." else "Already not fullscreen.") failIfNoop
-    -- Lean also makes it its workspace's most recent window, the one shown fullscreen
-    else { ops := [.setFullscreen id on noOuterGaps] }
+    else { ops := [.setMonocle ws (if on then some noOuterGaps else none)] }
 
 /-! ## Focus, between dwmac and macOS
 
