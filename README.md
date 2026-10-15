@@ -2,7 +2,7 @@
 
 A dwm-style master-stack tiling window manager for macOS, forked from [hillyu/dwmac](https://github.com/hillyu/dwmac)
 (itself an [AeroSpace](https://github.com/nikitabobko/AeroSpace) fork). This fork is built by
-[beth](https://github.com/d4hines/beth) (`overlays/dwmac`), not on its own.
+[beth](https://github.com/d4hines/beth) (?) (`overlays/dwmac`), not on its own.
 
 Its state and decisions live in Lean, with proofs (see [Lean/README.md](Lean/README.md)); Swift is the shell that
 talks to macOS. `lake build` (at the root) checks the proofs and the Lean tests; only `Lean/` ships.
